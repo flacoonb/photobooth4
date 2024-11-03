@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         body {
             font-family: 'Verdana', sans-serif;
             background-color: #ffffff;
-            background-image: url('https://cloud.fotomat-sg.ch/index.php/core/preview?fileId=7087&x=1724&y=1276&a=true&etag=774482890004bb1a1c81e2960f3ec324');
+            background-image: url('https://xxxx.jpg');
             background-repeat: no-repeat;
             background-size: cover;
             background-position: center;
@@ -175,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
 
-    <h1>Fotomat Selfie</h1>
+    <h1>Photobooth Selfie</h1>
 
     <div id="controls">
         <input type="file" accept="image/*" capture="user" id="fileInput" class="hidden">
@@ -184,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div id="instructions" style="margin-top: 10px; color: #555; font-size: 14px;">
             Klicken Sie auf den Button "Selfie aufnehmen", um ein Foto zu machen. 
             Nach dem Aufnehmen wird das Bild automatisch hochgeladen. Das Bild wird anschliessend 
-            in der Fotomat-Galerie angezeigt.
+            in der Photobooth-Galerie angezeigt.
         </div>
 
         <div id="spinner"></div>
