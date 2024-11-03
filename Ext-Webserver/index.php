@@ -178,7 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <h1>Fotomat Selfie</h1>
 
     <div id="controls">
-        <input type="file" accept="image/*" capture="environment" id="fileInput" class="hidden">
+        <input type="file" accept="image/*" capture="user" id="fileInput" class="hidden">
         <button id="snap">Selfie aufnehmen</button>
 
         <div id="instructions" style="margin-top: 10px; color: #555; font-size: 14px;">
