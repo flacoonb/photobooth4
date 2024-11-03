@@ -1,6 +1,6 @@
 # Selfie-Upload einrichten
 
-Diese Anleitung beschreibt, wie du das Selfie-Upload-System mit Webhooks auf einem Webserver und einer Photobooth einrichtest.
+Diese Anleitung beschreibt, wie du das Selfie-Upload-System mit Webhooks auf einem Webserver und einer Photobooth einrichtest. Im Grunde wird eine im Internet verfügbare Website aufgerufen. Die Website enthält einen Button, um ein Foto zu erstellen. Dieses wird direkt nach der Aufnahme im Ordner Upload gespeichert. Ein Aufruf mittels Webhook zur Photobooth lädt das Bild auf die Photobooth., wird anschliessend bearbeitet und zur Galerie hinzugefügt. Die Photobooth sendet daraufhin ein Webhook an die Website, wo das gemachte Bild im Upload-Ordner gelöscht wird.  
 
 ## Voraussetzungen
 
@@ -18,9 +18,9 @@ Damit der Webhook korrekt funktioniert, müssen folgende Voraussetzungen erfüll
 - **`/var/www/html/`**
   - `index.php`: Hauptseite für den Selfie-Upload mit der Upload-Logik und Webhook-Aufruf.
   - `config/config.php`: Konfigurationsdatei mit den URLs und Zugangsdaten.
-  - `uploads/`: Verzeichnis für hochgeladene Selfies. serve_image.php
-  - `uploads/serve_image.php`: Proxy für den Zugriff auf die Bilder
-  - `.htaccess`: Zugriffsschutz für den `uploads`-Ordner.
+  - `uploads/`: Verzeichnis für hochgeladene Selfies.
+  - `delete_image.php`: Webhook für die Löschung des Bildes.
+  - `delete_image.log`: Log für den Lösch-Webhook.
 
 ---
 
@@ -30,6 +30,8 @@ Damit der Webhook korrekt funktioniert, müssen folgende Voraussetzungen erfüll
   - `webhook_receiver.php`: Webhook-Empfänger, der das hochgeladene Bild herunterlädt und speichert.
 - **`/var/www/html/private/images/uploads`**
   - `images/uploads/`: Verzeichnis auf der Photobooth, in dem die heruntergeladenen Bilder gespeichert und weiterverarbeitet werden.
+- **`/var/log/webhook_receiver.log`**
+  - `webhook_receiver.log`: Log Datei der webhook_receiver.php.
 
 ### Berechtigungen setzen
 
