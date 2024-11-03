@@ -1,51 +1,33 @@
 <?php
-// Log-Datei für das Webhook-Skript
+// Log-Datei fÃ¼r das Webhook-Skript
 $logFile = '/var/log/webhook_receiver.log';
-$imageDirectory = '/var/www/html/private/images/uploads/'; // Zielverzeichnis für die heruntergeladenen Bilder
+$imageDirectory = '/var/www/html/private/images/uploads/';
 
 // Log-Funktion, um Nachrichten in die Log-Datei zu schreiben
-if (!function_exists('logMessage')) {
-    function logMessage($message) {
-        global $logFile;
-        file_put_contents($logFile, date('Y-m-d H:i:s') . ' - ' . $message . "\n", FILE_APPEND);
-    }
+function logMessage($message) {
+    global $logFile;
+    file_put_contents($logFile, date('Y-m-d H:i:s') . ' - ' . $message . "\n", FILE_APPEND);
 }
 
 // Funktion zur Bildausrichtung basierend auf Exif-Daten
 function fixImageOrientation($filename) {
     $image = imagecreatefromjpeg($filename);
     $exif = exif_read_data($filename);
-
     if (!empty($exif['Orientation'])) {
         switch ($exif['Orientation']) {
-            case 3: // 180° drehen
-                $image = imagerotate($image, 180, 0);
-                break;
-            case 6: // -90° drehen
-                $image = imagerotate($image, -90, 0);
-                break;
-            case 8: // +90° drehen
-                $image = imagerotate($image, 90, 0);
-                break;
+            case 3: $image = imagerotate($image, 180, 0); break;
+            case 6: $image = imagerotate($image, -90, 0); break;
+            case 8: $image = imagerotate($image, 90, 0); break;
         }
     }
-
-    // Speichere das gedrehte Bild zurück
-    imagejpeg($image, $filename, 90); // 90 ist die JPEG-Qualität
+    imagejpeg($image, $filename, 90);
     imagedestroy($image);
 }
 
 // Webhook-Daten empfangen und verarbeiten
-logMessage("Webhook-Empfänger gestartet");
+logMessage("Webhook-EmpfÃ¤nger gestartet");
 
 $data = file_get_contents("php://input");
-if ($data === false) {
-    logMessage("Fehler: Webhook-Daten konnten nicht empfangen werden.");
-    http_response_code(500);
-    echo json_encode(['status' => 'error', 'message' => 'Webhook-Daten konnten nicht empfangen werden']);
-    exit;
-}
-
 logMessage("Webhook-Daten empfangen: " . $data);
 
 $dataArray = json_decode($data, true);
@@ -67,19 +49,19 @@ $imageUrl = $dataArray['image_url'];
 $imageFileName = basename($imageUrl);
 $destination = $imageDirectory . $imageFileName;
 
-// Wiederholungsversuche für das Herunterladen des Bildes
-$maxRetries = 10; // Anzahl der Versuche erhöhen
-$retryDelay = 3; // Wartezeit auf 3 Sekunden erhöhen
+// Wiederholungsversuche fÃ¼r das Herunterladen des Bildes
+$maxRetries = 10;
+$retryDelay = 3;
 $attempt = 0;
 $imageData = false;
 
 while ($attempt < $maxRetries) {
     $imageData = file_get_contents($imageUrl);
     if ($imageData !== false) {
-        break; // Bild erfolgreich heruntergeladen
+        break;
     }
     logMessage("Bild nicht gefunden, erneuter Versuch in {$retryDelay} Sekunden... (Versuch: " . ($attempt + 1) . ")");
-    sleep($retryDelay); // Wartezeit zwischen den Versuchen
+    sleep($retryDelay);
     $attempt++;
 }
 
@@ -158,11 +140,11 @@ try {
 
     $picture_permissions = $config['picture']['permissions'];
     if (!chmod($filename_photo, (int)octdec($picture_permissions))) {
-        $imageHandler->addErrorData('Warnung: Berechtigungen für Bild konnten nicht geändert werden.');
+        $imageHandler->addErrorData('Warnung: Berechtigungen fÃ¼r Bild konnten nicht geÃ¤ndert werden.');
     }
 
     if (!unlink($filename_tmp)) {
-        $imageHandler->addErrorData('Warnung: Temporäre Datei konnte nicht gelöscht werden.');
+        $imageHandler->addErrorData('Warnung: TemporÃ¤re Datei konnte nicht gelÃ¶scht werden.');
     }
 
     if ($config['database']['enabled']) {
@@ -177,7 +159,31 @@ try {
     exit;
 }
 
-// Erfolgsnachricht zurückgeben
+// VerzÃ¶gerung vor dem Senden des LÃ¶sch-Webhook
+sleep(2);
+
+// LÃ¶sch-Webhook an die Website senden
+$deleteImageUrl = 'https://fotomat-sg.ch/test/delete_image.php';
+$deleteData = json_encode(['file_path' => $imageUrl]);
+
+$contextOptions = [
+    'http' => [
+        'method' => 'POST',
+        'header' => "Content-Type: application/json\r\n",
+        'content' => $deleteData,
+        'timeout' => 120,
+    ]
+];
+$context = stream_context_create($contextOptions);
+$response = file_get_contents($deleteImageUrl, false, $context);
+
+if ($response) {
+    logMessage("LÃ¶sch-Webhook erfolgreich gesendet, Antwort: " . $response);
+} else {
+    $error = error_get_last();
+    logMessage("Fehler beim Senden des LÃ¶sch-Webhooks: " . $error['message']);
+}
+
 http_response_code(200);
 echo json_encode(['status' => 'success', 'message' => 'Bild erfolgreich empfangen und verarbeitet']);
 ?>
