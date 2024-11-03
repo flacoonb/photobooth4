@@ -32,23 +32,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $webhookData);
             curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 120); // Timeout für den Webhook-Aufruf
+
             $response = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curl_error = curl_error($ch); // Capture any curl-specific error
             curl_close($ch);
 
-	if ($http_code === 200) {
-    	echo json_encode(['status' => 'success', 'file' => $fileName]);
-	} else {
-    	echo json_encode(['status' => 'error', 'message' => "Webhook fehlgeschlagen, HTTP-Code: $http_code"]);
-	}
-
+            if ($http_code === 200) {
+                echo json_encode(['status' => 'success', 'file' => $fileName]);
+            } else {
+                $errorMessage = "Webhook fehlgeschlagen, HTTP-Code: $http_code, Fehler: $curl_error, Antwort: $response";
+                error_log($errorMessage, 3, '/path/to/logfile.log'); // Specify your logfile path here
+                echo json_encode(['status' => 'error', 'message' => $errorMessage]);
+            }
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Upload fehlgeschlagen']);
         }
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Kein Bild gefunden oder Upload-Fehler']);
     }
-    exit; // Beende das Skript nach dem Upload
+    exit;
 }
 ?>
 
@@ -58,15 +62,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Selfie Upload</title>
-
-    <!-- Manifest einbinden -->
     <link rel="manifest" href="/manifest.json">
-
     <style>
         body {
             font-family: 'Verdana', sans-serif;
             background-color: #ffffff;
-            background-image: url('https://github.com/PhotoboothProject/photobooth/raw/dev/resources/img/logo/banner.png');
+            background-image: url('https://cloud.fotomat-sg.ch/index.php/core/preview?fileId=7087&x=1724&y=1276&a=true&etag=774482890004bb1a1c81e2960f3ec324');
             background-repeat: no-repeat;
             background-size: cover;
             background-position: center;
@@ -164,7 +165,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
     </style>
-    <!-- Service Worker Registrierung -->
     <script>
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js')
@@ -175,28 +175,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
 
-    <h1>Photobooth Selfie</h1>
+    <h1>Fotomat Selfie</h1>
 
     <div id="controls">
-        <!-- Button zum Aufnehmen des Selfies -->
         <input type="file" accept="image/*" capture="environment" id="fileInput" class="hidden">
         <button id="snap">Selfie aufnehmen</button>
 
-        <!-- TextBox für Anleitung -->
         <div id="instructions" style="margin-top: 10px; color: #555; font-size: 14px;">
             Klicken Sie auf den Button "Selfie aufnehmen", um ein Foto zu machen. 
             Nach dem Aufnehmen wird das Bild automatisch hochgeladen. Das Bild wird anschliessend 
-            in der Photobooth-Galerie angezeigt.
+            in der Fotomat-Galerie angezeigt.
         </div>
 
-        <!-- Spinner (Kreis-Animation) -->
         <div id="spinner"></div>
 
-        <!-- Erfolgs- oder Fehlermeldung -->
         <div id="message" class="message"></div>
     </div>
 
-    <!-- Vorschau des aufgenommenen Bildes -->
     <img id="preview" src="#" alt="Selfie Vorschau" class="hidden"/>
 
     <form id="uploadForm" method="post" enctype="multipart/form-data" style="display: none;">
@@ -263,5 +258,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     });
 </script>
-</body>
 </html>
