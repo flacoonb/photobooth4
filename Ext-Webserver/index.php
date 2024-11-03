@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         body {
             font-family: 'Verdana', sans-serif;
             background-color: #ffffff;
-            background-image: url('https://xxxx.jpg');
+            background-image: url('https://github.com/PhotoboothProject/photobooth/raw/dev/resources/img/logo/banner.png');
             background-repeat: no-repeat;
             background-size: cover;
             background-position: center;
