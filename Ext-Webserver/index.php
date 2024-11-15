@@ -2,28 +2,19 @@
 // Lade die Konfigurationsdatei
 $config = require __DIR__ . '/config/config.php';
 
-// PHP-Teil für den Upload und Webhook
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-        // Temporäre Datei aus dem Upload
         $imageTmpPath = $_FILES['image']['tmp_name'];
-
-        // Einzigartigen Dateinamen für das Bild erstellen
         $fileName = uniqid() . '.jpg';
         $uploadDir = __DIR__ . '/uploads/';
         $filePath = $uploadDir . $fileName;
 
-        // Sicherstellen, dass der Upload-Ordner existiert
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0777, true);
         }
 
-        // Bild in den Upload-Ordner verschieben
         if (move_uploaded_file($imageTmpPath, $filePath)) {
-            // URL des hochgeladenen Bildes (öffentlicher Zugriffspunkt)
             $imageUrl = $config['base_url'] . '/uploads/' . $fileName;
-
-            // Webhook an die Photobooth senden
             $webhookUrl = $config['photobooth_webhook_url'];
             $webhookData = json_encode(['image_url' => $imageUrl]);
 
@@ -32,18 +23,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, $webhookData);
             curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 120); // Timeout für den Webhook-Aufruf
+            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
 
             $response = curl_exec($ch);
             $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curl_error = curl_error($ch); // Capture any curl-specific error
+            $curl_error = curl_error($ch);
             curl_close($ch);
 
             if ($http_code === 200) {
                 echo json_encode(['status' => 'success', 'file' => $fileName]);
             } else {
                 $errorMessage = "Webhook fehlgeschlagen, HTTP-Code: $http_code, Fehler: $curl_error, Antwort: $response";
-                error_log($errorMessage, 3, '/path/to/logfile.log'); // Specify your logfile path here
+                error_log($errorMessage, 3, '/path/to/logfile.log');
                 echo json_encode(['status' => 'error', 'message' => $errorMessage]);
             }
         } else {
@@ -67,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         body {
             font-family: 'Verdana', sans-serif;
             background-color: #ffffff;
-            background-image: url('https://github.com/PhotoboothProject/photobooth/raw/dev/resources/img/logo/banner.png');
+            background-image: url('https://raw.githubusercontent.com/PhotoboothProject/photobooth/dev/resources/img/logo/banner.png');
             background-repeat: no-repeat;
             background-size: cover;
             background-position: center;
@@ -96,14 +87,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             cursor: pointer;
             transition: background-color 0.3s ease, transform 0.2s ease;
             margin-top: 10px;
-        }
-
-        #snap {
             background-color: #c42847;
             color: white;
         }
 
-        #snap:hover {
+        button:hover {
             background-color: #9f1f36;
             transform: scale(1.05);
         }
@@ -166,11 +154,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     </style>
     <script>
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-          .then(() => console.log('Service Worker registriert'))
-          .catch((err) => console.log('Service Worker Registrierung fehlgeschlagen:', err));
-      }
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(() => console.log('Service Worker registriert'))
+                .catch((err) => console.log('Service Worker Registrierung fehlgeschlagen:', err));
+        }
     </script>
 </head>
 <body>
@@ -183,8 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <div id="instructions" style="margin-top: 10px; color: #555; font-size: 14px;">
             Klicken Sie auf den Button "Selfie aufnehmen", um ein Foto zu machen. 
-            Nach dem Aufnehmen wird das Bild automatisch hochgeladen. Das Bild wird anschliessend 
-            in der Photobooth-Galerie angezeigt.
+            Nach dem Aufnehmen wird das Bild automatisch hochgeladen.
         </div>
 
         <div id="spinner"></div>
@@ -197,65 +184,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <form id="uploadForm" method="post" enctype="multipart/form-data" style="display: none;">
         <input type="file" name="image" id="fileUploadInput" style="display: none;">
     </form>
-</body>
-<script>
-    const fileInput = document.getElementById('fileInput');
-    const snapButton = document.getElementById('snap');
-    const preview = document.getElementById('preview');
-    const uploadForm = document.getElementById('uploadForm');
-    const fileUploadInput = document.getElementById('fileUploadInput');
-    const message = document.getElementById('message');
-    const spinner = document.getElementById('spinner');
 
-    snapButton.addEventListener('click', () => {
-        fileInput.click();
-    });
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const snapButton = document.getElementById('snap');
+        const preview = document.getElementById('preview');
+        const fileUploadInput = document.getElementById('fileUploadInput');
+        const message = document.getElementById('message');
+        const spinner = document.getElementById('spinner');
 
-    fileInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                preview.src = e.target.result;
-                preview.classList.remove('hidden');
-            }
-            reader.readAsDataURL(file);
+        snapButton.addEventListener('click', () => {
+            fileInput.click();
+        });
 
-            fileUploadInput.files = event.target.files;
-            uploadForm.style.display = 'block';
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                    preview.classList.remove('hidden');
+                }
+                reader.readAsDataURL(file);
 
-            const formData = new FormData(uploadForm);
-            spinner.style.display = 'block';
+                fileUploadInput.files = event.target.files;
+                const formData = new FormData();
+                formData.append('image', file);
 
-            fetch('', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                spinner.style.display = 'none';
-                if (data.status === 'success') {
-                    message.textContent = 'Bild erfolgreich hochgeladen!';
-                    message.className = 'message success';
-                    message.style.display = 'block';
-                    setTimeout(() => {
-                        message.style.display = 'none';
-                    }, 5000);
+                spinner.style.display = 'block';
 
-                    preview.classList.add('hidden');
-                } else {
-                    message.textContent = 'Fehler beim Hochladen: ' + data.message;
+                fetch('', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    spinner.style.display = 'none';
+                    if (data.status === 'success') {
+                        message.textContent = 'Bild erfolgreich hochgeladen!';
+                        message.className = 'message success';
+                        message.style.display = 'block';
+                        setTimeout(() => {
+                            message.style.display = 'none';
+                        }, 5000);
+
+                        preview.classList.add('hidden');
+                    } else {
+                        message.textContent = 'Fehler beim Hochladen: ' + data.message;
+                        message.className = 'message error';
+                        message.style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    spinner.style.display = 'none';
+                    message.textContent = 'Upload-Fehler: ' + error;
                     message.className = 'message error';
                     message.style.display = 'block';
-                }
-            })
-            .catch(error => {
-                spinner.style.display = 'none';
-                message.textContent = 'Upload-Fehler: ' + error;
-                message.className = 'message error';
-                message.style.display = 'block';
-            });
-        }
-    });
-</script>
+                });
+            }
+        });
+    </script>
+</body>
 </html>
