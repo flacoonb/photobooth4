@@ -9,9 +9,11 @@ use Photobooth\Helper;
 use Photobooth\Collage;
 use Photobooth\Enum\FolderEnum;
 use Photobooth\Enum\ImageFilterEnum;
+use Photobooth\Processor\ImageProcessor;
 use Photobooth\Service\DatabaseManagerService;
 use Photobooth\Service\LoggerService;
 use Photobooth\Utility\ImageUtility;
+use Photobooth\Utility\PathUtility;
 
 header('Content-Type: application/json');
 
@@ -20,24 +22,26 @@ $logger->debug(basename($_SERVER['PHP_SELF']));
 
 $database = DatabaseManagerService::getInstance();
 
+$processor = null;
+
 try {
     if (empty($_POST['file'])) {
         throw new \Exception('No file provided');
     }
 
-    $file = $_POST['file'];
+    $vars['fileName'] = $_POST['file'];
 
     if (!isset($_POST['style']) || !in_array($_POST['style'], ['photo', 'collage', 'custom', 'chroma'])) {
         throw new \Exception('Invalid or missing style parameter');
     }
 
-    $style = $_POST['style'];
+    $vars['style'] = $_POST['style'];
 
-    $filter = null;
+    $vars['imageFilter'] = null;
     if (!isset($_POST['filter'])) {
         $logger->debug('No filter provided.');
     } elseif (!empty($_POST['filter'])) {
-        $filter = ImageFilterEnum::tryFrom($_POST['filter']);
+        $vars['imageFilter'] = ImageFilterEnum::tryFrom($_POST['filter']);
     }
 } catch (\Exception $e) {
     // Handle the exception
@@ -46,62 +50,89 @@ try {
     die();
 }
 
-$isCollage = false;
-$isChroma = false;
-if ($_POST['style'] === 'collage') {
-    $isCollage = true;
-} elseif ($_POST['style'] === 'chroma') {
-    $isChroma = true;
-}
+$vars['isCollage'] = $_POST['style'] === 'collage';
+$vars['editSingleCollage'] = false;
+$vars['isChroma'] = $_POST['style'] === 'chroma';
 
-$srcImages = [];
-$srcImages[] = $file;
+$vars['srcImages'] = [];
+$vars['srcImages'][] = $vars['fileName'];
 
-if (is_file(__DIR__ . '/../private/api/applyEffects.php')) {
+$applyEffectsPath = PathUtility::getAbsolutePath('private/api/applyEffects.php');
+if (is_file($applyEffectsPath)) {
     $logger->debug('Using private/api/applyEffects.php.');
-    include __DIR__ . '/../private/api/applyEffects.php';
+
+    try {
+        include $applyEffectsPath;
+    } catch (\Exception $e) {
+        $logger->error('Error (private applyEffects): ' . $e->getMessage());
+        echo json_encode(['error' => $e->getMessage()]);
+        die();
+    }
 }
 
 try {
-    $filename_tmp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $file;
-
-    if ($isCollage) {
-        list($collageSrcImagePaths, $srcImages) = Collage::getCollageFiles($config['collage'], $filename_tmp, $file, $srcImages);
-
-        if (!Collage::createCollage($config, $collageSrcImagePaths, $filename_tmp, $filter)) {
-            throw new \Exception('Error creating collage image.');
-        }
-    }
-
     $imageHandler = new Image();
     $imageHandler->debugLevel = $config['dev']['loglevel'];
 
-    foreach ($srcImages as $image) {
-        $imageHandler->imageModified = false;
-        $filename_photo = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $image;
-        $filename_keying = FolderEnum::KEYING->absolute() . DIRECTORY_SEPARATOR . $image;
-        $filename_tmp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $image;
-        $filename_thumb = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $image;
+    $vars['tmpFile'] = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $vars['fileName'];
 
-        if (!file_exists($filename_tmp)) {
+    if (class_exists('Photobooth\Processor\ImageProcessor')) {
+        $processor = new ImageProcessor($imageHandler, $logger, $database, $vars, $config);
+    }
+
+    if ($vars['isCollage']) {
+        list($vars['collageSrcImagePaths'], $vars['srcImages']) = Collage::getCollageFiles($config['collage'], $vars['tmpFile'], $vars['fileName'], $vars['srcImages']);
+
+        if ($processor !== null && $processor instanceof ImageProcessor && method_exists($processor, 'preCollageProcessing')) {
+            list($imageHandler, $vars, $config) = $processor->preCollageProcessing($imageHandler, $vars, $config);
+        }
+        if (!Collage::createCollage($config, $vars['collageSrcImagePaths'], $vars['tmpFile'], $vars['imageFilter'])) {
+            throw new \Exception('Error creating collage image.');
+        }
+        if ($processor !== null && $processor instanceof ImageProcessor && method_exists($processor, 'postCollageProcessing')) {
+            list($imageHandler, $vars, $config) = $processor->postCollageProcessing($imageHandler, $vars, $config);
+        }
+    }
+
+    foreach ($vars['srcImages'] as $vars['singleImageFile']) {
+        $imageHandler->imageModified = false;
+        $vars['resultFile'] = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
+        $vars['keyingFile'] = FolderEnum::KEYING->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
+        $vars['tmpFile'] = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
+        $vars['thumbFile'] = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
+
+        if (!file_exists($vars['tmpFile'])) {
             throw new \Exception('Image doesn\'t exist.');
         }
 
-        $imageResource = $imageHandler->createFromImage($filename_tmp);
+        $imageResource = $imageHandler->createFromImage($vars['tmpFile']);
         if (!$imageResource) {
             throw new \Exception('Error creating image resource.');
         }
 
-        if (!$isChroma) {
-            if ($isCollage && $file != $image) {
-                $editSingleCollage = true;
-                $imageHandler->framePath = $config['collage']['frame'];
+        if ($processor !== null && $processor instanceof ImageProcessor && method_exists($processor, 'preImageProcessing')) {
+            list($imageHandler, $vars, $config, $imageResource) = $processor->preImageProcessing($imageHandler, $vars, $config, $imageResource);
+        }
+        if (!$vars['isChroma']) {
+            if ($vars['isCollage'] && $vars['fileName'] != $vars['singleImageFile']) {
+                $vars['editSingleCollage'] = true;
+                $imageHandler->framePath = $config['collage']['take_frame'] === 'always' ? $config['collage']['frame'] : $config['picture']['frame'];
             } else {
-                $editSingleCollage = false;
+                $vars['editSingleCollage'] = false;
                 $imageHandler->framePath = $config['picture']['frame'];
             }
 
-            if (!$isCollage || $editSingleCollage) {
+            if (!$vars['isCollage'] || $vars['editSingleCollage']) {
+                // apply filter
+                if ($vars['imageFilter'] !== null && $vars['imageFilter'] !== ImageFilterEnum::PLAIN) {
+                    try {
+                        ImageUtility::applyFilter($vars['imageFilter'], $imageResource);
+                        $imageHandler->imageModified = true;
+                    } catch (\Exception $e) {
+                        throw new \Exception('Error applying image filter.');
+                    }
+                }
+
                 if ($config['picture']['flip'] !== 'off') {
                     try {
                         if ($config['picture']['flip'] === 'flip-horizontal') {
@@ -117,17 +148,17 @@ try {
                     }
                 }
 
-                // apply filter
-                if ($filter !== null && $filter !== ImageFilterEnum::PLAIN) {
-                    try {
-                        ImageUtility::applyFilter($filter, $imageResource);
-                        $imageHandler->imageModified = true;
-                    } catch (\Exception $e) {
-                        throw new \Exception('Error applying image filter.');
+                if ($config['picture']['rotation'] !== '0') {
+                    $imageResource = $imageHandler->rotateResizeImage(
+                        image: $imageResource,
+                        degrees: $config['picture']['rotation']
+                    );
+                    if (!$imageResource instanceof \GdImage) {
+                        throw new \Exception('Error resizing resource.');
                     }
                 }
 
-                if ($config['picture']['polaroid_effect'] && !$isCollage) {
+                if ($config['picture']['polaroid_effect']) {
                     $imageHandler->polaroidRotation = $config['picture']['polaroid_rotation'];
                     $imageResource = $imageHandler->effectPolaroid($imageResource);
                     if (!$imageResource instanceof \GdImage) {
@@ -135,8 +166,8 @@ try {
                     }
                 }
 
-                if (($config['picture']['take_frame'] && !$isCollage) || ($editSingleCollage && $config['collage']['take_frame'] === 'always')) {
-                    if (!$isCollage) {
+                if (($config['picture']['take_frame'] && !$vars['isCollage']) || ($vars['editSingleCollage'] && ($config['collage']['take_frame'] === 'always' || $config['collage']['take_frame'] !== 'always' && $config['picture']['take_frame']))) {
+                    if (!$vars['isCollage'] || $config['collage']['take_frame'] !== 'always') {
                         $imageHandler->frameExtend = $config['picture']['extend_by_frame'];
                         if ($config['picture']['extend_by_frame']) {
                             $imageHandler->frameExtendLeft = $config['picture']['frame_left_percentage'];
@@ -152,24 +183,19 @@ try {
                         throw new \Exception('Error applying frame to image resource.');
                     }
                 }
-
-                if ($config['picture']['rotation'] !== '0') {
-                    $imageHandler->resizeRotation = $config['picture']['rotation'];
-                    $imageResource = $imageHandler->rotateResizeImage($imageResource);
-                    if (!$imageResource instanceof \GdImage) {
-                        throw new \Exception('Error resizing resource.');
-                    }
-                }
             }
         }
-        if ($config['keying']['enabled'] || $isChroma) {
+
+        if ($processor !== null && $processor instanceof ImageProcessor && method_exists($processor, 'postImageProcessing')) {
+            list($imageHandler, $vars, $config, $imageResource) = $processor->postImageProcessing($imageHandler, $vars, $config, $imageResource);
+        }
+
+        if ($config['keying']['enabled'] || $vars['isChroma']) {
             $chroma_size = intval(substr($config['keying']['size'], 0, -2));
-            $imageHandler->resizeMaxWidth = $chroma_size;
-            $imageHandler->resizeMaxHeight = $chroma_size;
-            $chromaCopyResource = $imageHandler->resizeImage($imageResource);
+            $chromaCopyResource = $imageHandler->resizeImage($imageResource, $chroma_size);
             if ($chromaCopyResource instanceof \GdImage) {
                 $imageHandler->jpegQuality = $config['jpeg_quality']['chroma'];
-                if (!$imageHandler->saveJpeg($chromaCopyResource, $filename_keying)) {
+                if (!$imageHandler->saveJpeg($chromaCopyResource, $vars['keyingFile'])) {
                     $imageHandler->addErrorData('Warning: Failed to save chroma image copy.');
                 }
             } else {
@@ -180,7 +206,7 @@ try {
             }
         }
 
-        if (!$isCollage && !$isChroma && $config['textonpicture']['enabled']) {
+        if ($config['textonpicture']['enabled'] && (!$vars['isCollage'] && !$vars['isChroma'] || $vars['editSingleCollage'])) {
             $imageHandler->fontSize = $config['textonpicture']['font_size'];
             $imageHandler->fontRotation = $config['textonpicture']['rotation'];
             $imageHandler->fontLocationX = $config['textonpicture']['locationx'];
@@ -199,12 +225,10 @@ try {
 
         // image scale, create thumbnail
         $thumb_size = intval(substr($config['picture']['thumb_size'], 0, -2));
-        $imageHandler->resizeMaxWidth = $thumb_size;
-        $imageHandler->resizeMaxHeight = $thumb_size;
-        $thumbResource = $imageHandler->resizeImage($imageResource);
+        $thumbResource = $imageHandler->resizeImage($imageResource, $thumb_size);
         if ($thumbResource instanceof \GdImage) {
             $imageHandler->jpegQuality = $config['jpeg_quality']['thumb'];
-            if (!$imageHandler->saveJpeg($thumbResource, $filename_thumb)) {
+            if (!$imageHandler->saveJpeg($thumbResource, $vars['thumbFile'])) {
                 $imageHandler->addErrorData('Warning: Failed to create thumbnail.');
             }
         } else {
@@ -217,13 +241,13 @@ try {
 
         $imageHandler->jpegQuality = $config['jpeg_quality']['image'];
         if ($imageHandler->imageModified || ($config['jpeg_quality']['image'] >= 0 && $config['jpeg_quality']['image'] < 100)) {
-            if (!$imageHandler->saveJpeg($imageResource, $filename_photo)) {
+            if (!$imageHandler->saveJpeg($imageResource, $vars['resultFile'])) {
                 throw new \Exception('Failed to save image.');
             }
             // preserve jpeg meta data
             if ($config['picture']['preserve_exif_data'] && $config['commands']['exiftool']) {
                 try {
-                    $cmd = sprintf($config['commands']['exiftool'], $filename_tmp, $filename_photo);
+                    $cmd = sprintf($config['commands']['exiftool'], $vars['tmpFile'], $vars['resultFile']);
                     $cmd .= ' 2>&1'; //Redirect stderr to stdout, otherwise error messages get lost.
 
                     exec($cmd, $output, $returnValue);
@@ -242,7 +266,7 @@ try {
                 }
             }
         } else {
-            if (!copy($filename_tmp, $filename_photo)) {
+            if (!copy($vars['tmpFile'], $vars['resultFile'])) {
                 throw new \Exception('Failed to copy photo.');
             }
         }
@@ -250,8 +274,8 @@ try {
 
         // insert into database
         if ($config['database']['enabled']) {
-            if (($isChroma && $config['keying']['show_all'] === true) || !$isChroma) {
-                $database->appendContentToDB($image);
+            if (($vars['isChroma'] && $config['keying']['show_all'] === true) || !$vars['isChroma']) {
+                $database->appendContentToDB($vars['singleImageFile']);
             }
         }
 
@@ -292,7 +316,7 @@ try {
             @Helper::cdFTPTree($ftp, $destination);
 
             // upload processed picture into destination folder
-            $put_result = @ftp_put($ftp, $image, $filename_photo, FTP_BINARY);
+            $put_result = @ftp_put($ftp, $vars['singleImageFile'], $vars['resultFile'], FTP_BINARY);
 
             if (!$put_result) {
                 $message = 'Unable to save file on FTP Server!';
@@ -303,7 +327,7 @@ try {
 
             // upload the thumbnail if enabled
             if ($config['ftp']['upload_thumb']) {
-                $thumb_result = ftp_put($ftp, 'tmb_' . $image, $filename_thumb, FTP_BINARY);
+                $thumb_result = ftp_put($ftp, 'tmb_' . $vars['singleImageFile'], $vars['thumbFile'], FTP_BINARY);
                 if (!$thumb_result) {
                     $logger->error('Unable to load the thumbnail', $config['ftp']);
                 }
@@ -359,21 +383,21 @@ try {
 
         // Change permissions
         $picture_permissions = $config['picture']['permissions'];
-        if (!chmod($filename_photo, (int)octdec($picture_permissions))) {
+        if (!chmod($vars['resultFile'], (int)octdec($picture_permissions))) {
             $imageHandler->addErrorData('Warning: Failed to change picture permissions.');
         }
 
         if (!$config['picture']['keep_original']) {
-            if (!unlink($filename_tmp)) {
+            if (!unlink($vars['tmpFile'])) {
                 $imageHandler->addErrorData('Warning: Failed to remove temporary photo.');
             }
         }
 
         if ($_POST['style'] === 'chroma' && $config['keying']['show_all'] === false) {
-            if (!unlink($filename_photo)) {
+            if (!unlink($vars['resultFile'])) {
                 $imageHandler->addErrorData('Warning: Failed to remove photo.');
             }
-            if (!unlink($filename_thumb)) {
+            if (!unlink($vars['thumbFile'])) {
                 $imageHandler->addErrorData('Warning: Failed to remove thumbnail.');
             }
         }
@@ -383,7 +407,7 @@ try {
     if (isset($imageResource) && $imageResource instanceof \GdImage) {
         unset($imageResource);
     }
-    if (isset($imageHandler) && is_array($imageHandler->errorLog) && !empty($imageHandler->errorLog)) {
+    if (is_array($imageHandler->errorLog) && !empty($imageHandler->errorLog)) {
         $logger->error('Error', $imageHandler->errorLog);
     }
     $logger->error($e->getMessage());
@@ -396,8 +420,8 @@ if (is_array($imageHandler->errorLog) && !empty($imageHandler->errorLog)) {
 }
 
 $data = [
-    'file' => $file,
-    'images' => $srcImages,
+    'file' => $vars['fileName'],
+    'images' => $vars['srcImages'],
 ];
 $logger->debug('effects applied', $data);
 echo json_encode($data);
