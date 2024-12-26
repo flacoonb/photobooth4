@@ -3,6 +3,7 @@
 namespace Photobooth\Configuration;
 
 use Photobooth\Enum\ImageFilterEnum;
+use Photobooth\Enum\TimezoneEnum;
 use Photobooth\Environment;
 use Symfony\Component\Config\Definition\Builder\NodeDefinition;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
@@ -1004,6 +1005,18 @@ class PhotoboothConfiguration implements ConfigurationInterface
                     ->values(['cs', 'de', 'en', 'es', 'fr', 'hr', 'it', 'nl', 'pt'])
                     ->defaultValue('en')
                     ->end()
+                ->enumNode('local_timezone')
+                    ->values(TimezoneEnum::cases())
+                    ->defaultValue(TimezoneEnum::EUROPE_LONDON)
+                    ->beforeNormalization()
+                        ->always(function ($value) {
+                            if (is_string($value)) {
+                                $value = TimezoneEnum::from($value);
+                            }
+                            return $value;
+                        })
+                        ->end()
+                    ->end()
                 ->integerNode('notification_timeout')
                     ->defaultValue(5)
                     ->beforeNormalization()
@@ -1347,8 +1360,9 @@ class PhotoboothConfiguration implements ConfigurationInterface
                 ->scalarNode('textLeft')->defaultValue('')->end()
                 ->enumNode('symbol')
                     ->values([
-                        'fa-camera-retro', 'fa-birthday-cake', 'fa-gift', 'fa-tree', 'fa-snowflake-o', 'fa-heart-o',
-                        'fa-heart', 'fa-heartbeat', 'fa-apple', 'fa-anchor', 'fa-glass', 'fa-gears', 'fa-users'
+                        'fa-camera', 'fa-camera-retro', 'fa-birthday-cake', 'fa-gift', 'fa-tree', 'fa-snowflake',
+                        'fa-regular fa-heart', 'fa-solid fa-heart', 'fa-solid fa-heart-pulse', 'fa-brands fa-apple',
+                        'fa-anchor', 'fa-light fa-champagne-glasses', 'fa-gears', 'fa-users'
                     ])
                     ->defaultValue('fa-heart-o')
                     ->end()
@@ -1363,7 +1377,6 @@ class PhotoboothConfiguration implements ConfigurationInterface
                 ->booleanNode('force_buzzer')->defaultValue(false)->end()
                 ->scalarNode('buzzer_message')->defaultValue('Use Buzzer to take a Picture')->end()
                 ->booleanNode('show_cups')->defaultValue(false)->end()
-                ->booleanNode('show_fs')->defaultValue(false)->end()
                 ->booleanNode('show_printUnlock')->defaultValue(false)->end()
                 ->booleanNode('homescreen')->defaultValue(true)->end()
                 ->booleanNode('reload')->defaultValue(false)->end()

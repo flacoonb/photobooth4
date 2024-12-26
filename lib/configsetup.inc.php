@@ -1,6 +1,7 @@
 <?php
 
 use Photobooth\Enum\ImageFilterEnum;
+use Photobooth\Enum\TimezoneEnum;
 use Photobooth\Service\ConfigurationService;
 use Photobooth\Service\LanguageService;
 use Photobooth\Utility\PathUtility;
@@ -97,6 +98,14 @@ return [
                 'pt' => 'PT',
             ],
             'value' => $config['ui']['language'],
+        ],
+        'local_timezone' => [
+            'view' => 'basic',
+            'type' => 'select',
+            'name' => 'ui[local_timezone]',
+            'placeholder' => $defaultConfig['ui']['local_timezone'],
+            'value' => $config['ui']['local_timezone'],
+            'options' => TimezoneEnum::cases(),
         ],
         'translate' => [
             'view' => 'basic',
@@ -372,13 +381,13 @@ return [
                 'fa-birthday-cake' => 'Birthday Cake',
                 'fa-gift' => 'Gift',
                 'fa-tree' => 'Tree',
-                'fa-snowflake-o' => 'Snowflake',
-                'fa-heart-o' => 'Heart',
-                'fa-heart' => 'Heart filled',
-                'fa-heartbeat' => 'Heartbeat',
-                'fa-apple' => 'Apple',
+                'fa-snowflake' => 'Snowflake',
+                'fa-regular fa-heart' => 'Heart',
+                'fa-solid fa-heart' => 'Heart filled',
+                'fa-solid fa-heart-pulse' => 'Heartbeat',
+                'fa-brands fa-apple' => 'Apple',
                 'fa-anchor' => 'Anchor',
-                'fa-glass' => 'Glass',
+                'fa-light fa-champagne-glasses' => 'Champagne glasses',
                 'fa-gears' => 'Gears',
                 'fa-users' => 'People',
             ],
@@ -2687,12 +2696,6 @@ return [
                 PathUtility::getAbsolutePath('resources/img/cheese'),
                 PathUtility::getAbsolutePath('private/images/cheese'),
             ]
-        ],
-        'button_show_fs' => [
-            'view' => 'basic',
-            'type' => 'checkbox',
-            'name' => 'button[show_fs]',
-            'value' => $config['button']['show_fs'],
         ],
         'button_homescreen' => [
             'view' => 'advanced',

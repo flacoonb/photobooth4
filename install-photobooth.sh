@@ -10,7 +10,7 @@ RUNNING_ON_PI=true
 FORCE_RASPBERRY_PI=false
 DATE=$(date +"%Y%m%d-%H-%M")
 IPADDRESS=$(hostname -I | cut -d " " -f 1)
-PHOTOBOOTH_TMP_LOG="/tmp/$DATE-photobooth.txt"
+PHOTOBOOTH_LOG="/var/log/photobooth_install.log"
 
 BRANCH="dev"
 GIT_INSTALL=true
@@ -26,7 +26,7 @@ CHROME_FLAGS=false
 CHROME_DEFAULT_FLAGS="--noerrdialogs --disable-infobars --disable-features=Translate --no-first-run --check-for-update-interval=31536000 --touch-events=enabled --password-store=basic"
 AUTOSTART_FILE=""
 DESKTOP_OS=true
-WAYLAND_ENV=true
+WAYLAND_ENV=$(pgrep wayfire > /dev/null || pgrep labwc > /dev/null && echo true || echo false)
 PHP_VERSION="8.3"
 
 # Update
@@ -81,17 +81,17 @@ DEBIAN=(
 
 function info {
     echo -e "\033[0;36m${1}\033[0m"
-    echo "${1}" >>"$PHOTOBOOTH_TMP_LOG"
+    echo "${1}" >>"$PHOTOBOOTH_LOG"
 }
 
 function warn {
     echo -e "\033[0;33m${1}\033[0m"
-    echo "WARN: ${1}" >>"$PHOTOBOOTH_TMP_LOG"
+    echo "WARN: ${1}" >>"$PHOTOBOOTH_LOG"
 }
 
 function error {
     echo -e "\033[0;31m${1}\033[0m"
-    echo "ERROR: ${1}" >>"$PHOTOBOOTH_TMP_LOG"
+    echo "ERROR: ${1}" >>"$PHOTOBOOTH_LOG"
 }
 
 function print_spaces() {
@@ -569,8 +569,6 @@ function general_setup() {
     mkdir -p "$INSTALLFOLDERPATH"
     chown www-data:www-data "$INSTALLFOLDERPATH"
     chown www-data:www-data /var/www
-
-    PHOTOBOOTH_LOG="$INSTALLFOLDERPATH/private/install.log"
 }
 
 function add_git_remote() {
@@ -981,7 +979,6 @@ detect_photobooth_install() {
                     PHOTOBOOTH_FOUND=true
                     INSTALLFOLDERPATH="$path"
                     info "### Photobooth installation found in path ${path}."
-                    PHOTOBOOTH_LOG="$INSTALLFOLDERPATH/private/install.log"
                 fi
             fi
         fi
@@ -1033,14 +1030,6 @@ else
     warn "Can not check Internet connection, wget missing!"
 fi
 
-if [ "$RUNNING_ON_PI" = true ]; then
-    if [ -f "/home/$USERNAME/.config/wayfire.ini" ]; then
-        WAYLAND_ENV=true
-    else
-        WAYLAND_ENV=false
-    fi
-fi
-
 ############################################################
 #                                                          #
 # Try updating Photobooth                                  #
@@ -1061,10 +1050,12 @@ if [ "$RUN_UPDATE" = true ]; then
 
     if [ "$GIT_INSTALL" = true ]; then
         detect_browser
-        if [ -d "/etc/xdg/autostart" ] && [ "$WEBBROWSER" != "unknown" ]; then
-            ask_kiosk_mode
-        else
+        if [ "$WAYLAND_ENV" = true ]; then
+            warn "### Kiosk-Mode can't be setup automatically on wayland!"
+        elif [ "$WEBBROWSER" = "unknown" ]; then
             warn "### No supported webbrowser found!"
+        else
+            ask_kiosk_mode
         fi
         print_spaces
 
@@ -1134,8 +1125,6 @@ if [ "$RUN_UPDATE" = true ]; then
         info "### avoid graphical issues."
         info "###"
         info "### Have fun with your Photobooth!"
-
-        cat "$PHOTOBOOTH_TMP_LOG" >>"$PHOTOBOOTH_LOG" || warn "WARN: failed to add log to ${PHOTOBOOTH_LOG}"
     else
         error "ERROR: Can not Update!"
     fi
@@ -1197,14 +1186,14 @@ fi
 print_spaces
 
 detect_browser
-if [ -d "/etc/xdg/autostart" ]; then
-    if [ "$WEBBROWSER" != "unknown" ]; then
-        ask_kiosk_mode
-    else
-        warn "### No supported webbrowser found!"
-    fi
-    print_spaces
+if [ "$WAYLAND_ENV" = true ]; then
+    warn "### Kiosk-Mode can't be setup automatically on wayland!"
+elif [ "$WEBBROWSER" = "unknown" ]; then
+    warn "### No supported webbrowser found!"
+else
+    ask_kiosk_mode
 fi
+print_spaces
 
 # Pi specific setup start
 if [ "$RUNNING_ON_PI" = true ]; then
@@ -1276,8 +1265,6 @@ if [ "$SETUP_CUPS" = true ]; then
 fi
 info "###"
 info "### Have fun with your Photobooth, but first restart your device!"
-
-cat "$PHOTOBOOTH_TMP_LOG" >>"$PHOTOBOOTH_LOG" || warn "WARN: failed to add log to ${PHOTOBOOTH_LOG}"
 
 echo -e "\033[0;33m"
 ask_yes_no "### Do you like to reboot now? [y/N] " "N"
