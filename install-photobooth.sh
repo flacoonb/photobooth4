@@ -137,10 +137,10 @@ function log() {
 }
 
 function whiptail_wrapper() {
-    # Redirect whiptail UI to original stderr (fd 5)
-    # Redirect whiptail stdout to original stdout (fd 4) to satisfy TTY requirement
-    # Redirect result to fd 3, which is a copy of current stdout (pipe or logfile)
-    whiptail "$@" --output-fd 3 1>&4 2>&5 3>&1
+    # Redirect whiptail UI to /dev/tty (works for both stdout and stderr variants)
+    # Redirect whiptail result to fd 3 (which is mapped to current stdout/pipe)
+    # This ensures UI is visible and result is captured, bypassing complex fd logic
+    whiptail "$@" --output-fd 3 >/dev/tty 2>/dev/tty 3>&1
 }
 
 function progress_init() {
