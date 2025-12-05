@@ -375,42 +375,42 @@ function install_package() {
     local package=$1
 
     if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "ok installed"; then
-        info "Package installation" "${package} is already installed."
+        log "Package installation: ${package} is already installed."
         return 0
     else
-        info "[Package]" "Installing missing package: ${package}"
+        log "[Package] Installing missing package: ${package}"
 
         # Handle PHP versioned packages with fallback
         if [[ "$package" =~ ^php[0-9]+\.[0-9]+- ]] || [[ "$package" =~ ^libapache2-mod-php[0-9]+\.[0-9]+$ ]]; then
             local pkg_generic
             pkg_generic=$(echo "$package" | sed -E "s/[0-9]+\.[0-9]+-/-/; s/[0-9]+\.[0-9]+$//")
 
-            if apt-get -qq install -y "$package" >/dev/null 2>&1; then
-                info "Package installation" "Successfully installed ${package}."
+            if DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$package" >/dev/null 2>&1; then
+                log "Package installation: Successfully installed ${package}."
                 return 0
             else
-                warn "Package ${package} not available, falling back to ${pkg_generic}..."
-                if apt-get -qq install -y "$pkg_generic" >/dev/null 2>&1; then
-                    info "Package installation" "Successfully installed ${pkg_generic}."
+                log "Package ${package} not available, falling back to ${pkg_generic}..."
+                if DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$pkg_generic" >/dev/null 2>&1; then
+                    log "Package installation: Successfully installed ${pkg_generic}."
                     return 0
                 else
-                    error "Failed to install ${package} and fallback ${pkg_generic}."
+                    log "ERROR: Failed to install ${package} and fallback ${pkg_generic}."
                     return 1
                 fi
             fi
         else
             # Regular package install
-            if apt-get -qq install -y "$package" >/dev/null 2>&1; then
-                info "Package installation" "Successfully installed ${package}."
+            if DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$package" >/dev/null 2>&1; then
+                log "Package installation: Successfully installed ${package}."
                 return 0
             else
                 # Special case: ignore failure on software-properties-common, unavailable on Debian Trixie
                 if [[ "$package" == "software-properties-common" ]]; then
-                    warn "Ignoring failed install of ${package}."
+                    log "Ignoring failed install of ${package}."
                     return 0
                 fi
 
-                warn "Failed to install ${package}."
+                log "WARNING: Failed to install ${package}."
                 return 1
             fi
         fi
@@ -1580,12 +1580,12 @@ function update_nodejs() {
     rm -f /usr/bin/node /usr/local/bin/node
 
     info "Node.js" "Installing Node.js v$NODEJS_MAJOR.$NODEJS_MINOR."
-    apt-get -qq install -y ca-certificates curl gnupg >/dev/null 2>&1
+    DEBIAN_FRONTEND=noninteractive apt-get -qq install -y ca-certificates curl gnupg >/dev/null 2>&1
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg >/dev/null 2>&1
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
     apt-get -qq update >/dev/null 2>&1
-    if ! apt-get -qq install -y nodejs >/dev/null 2>&1; then
+    if ! DEBIAN_FRONTEND=noninteractive apt-get -qq install -y nodejs >/dev/null 2>&1; then
         error "Failed to install Node.js."
         return 1
     fi
@@ -1635,7 +1635,7 @@ function check_npm() {
             confirm "npm Installation Error" "npm could not be installed. Installation of Photobooth may fail."
             return 1
         fi
-        if ! apt-get -qq install -y npm >/dev/null 2>&1; then
+        if ! DEBIAN_FRONTEND=noninteractive apt-get -qq install -y npm >/dev/null 2>&1; then
             warn "Failed to install npm via apt-get."
             confirm "npm Installation Error" "npm could not be installed. Installation of Photobooth may fail."
             return 1
@@ -1670,11 +1670,11 @@ function check_python() {
         info "Python" "Python version is 3.12 or newer. Attempting to install python3-distutils..."
 
         # Attempt to install python3-distutils silently
-        if apt-get -qq install python3-distutils -y >/dev/null 2>&1; then
+        if DEBIAN_FRONTEND=noninteractive apt-get -qq install python3-distutils -y >/dev/null 2>&1; then
             info "Python" "python3-distutils installed successfully."
         else
             warn "Failed to install python3-distutils. Attempting to install python3-setuptools..."
-            if apt-get -qq install python3-setuptools -y >/dev/null 2>&1; then
+            if DEBIAN_FRONTEND=noninteractive apt-get -qq install python3-setuptools -y >/dev/null 2>&1; then
                 info "Python" "python3-setuptools installed successfully."
             else
                 warn "Installation of python3-distutils and python3-setuptools failed. Photobooth installation might continue, but could encounter issues."
