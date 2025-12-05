@@ -400,13 +400,13 @@ if ($action === 'reset') {
                             $logger->debug('Found gphoto2 line in go2rtc.yaml');
                             $newCommand = 'gphoto2';
 
-                            if (!empty($newConfig['commands']['go2rtc_aperture'])) {
+                            if (isset($newConfig['commands']['go2rtc_aperture']) && $newConfig['commands']['go2rtc_aperture'] !== '') {
                                 $aperture = intval($newConfig['commands']['go2rtc_aperture']);
                                 $newCommand .= ' --set-config aperture=' . $aperture;
                                 $logger->debug('Adding aperture=' . $aperture);
                             }
 
-                            if (!empty($newConfig['commands']['go2rtc_iso'])) {
+                            if (isset($newConfig['commands']['go2rtc_iso']) && $newConfig['commands']['go2rtc_iso'] !== '') {
                                 $iso = intval($newConfig['commands']['go2rtc_iso']);
                                 $newCommand .= ' --set-config iso=' . $iso;
                                 $logger->debug('Adding iso=' . $iso);
@@ -432,13 +432,9 @@ if ($action === 'reset') {
                         if (file_put_contents($go2rtcConfigFile, $newContent) !== false) {
                             $logger->info('go2rtc.yaml updated with new camera settings');
 
-                            // Restart go2rtc service
-                            exec('sudo systemctl restart go2rtc.service 2>&1', $output, $returnCode);
-                            if ($returnCode === 0) {
-                                $logger->info('go2rtc service restarted successfully');
-                            } else {
-                                $logger->warning('Failed to restart go2rtc service: ' . implode("\n", $output));
-                            }
+                            // Restart go2rtc service in background to avoid blocking the response
+                            exec('sudo systemctl restart go2rtc.service > /dev/null 2>&1 &');
+                            $logger->info('go2rtc service restart initiated');
                         } else {
                             $logger->error('Failed to write go2rtc.yaml file');
                         }
