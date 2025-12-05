@@ -120,8 +120,54 @@ REMBG_PIP_PACKAGES=(
 # Logging / helper functions
 # ==================================================
 
+# Progress tracking
+PROGRESS_PIPE=""
+PROGRESS_CURRENT=0
+PROGRESS_TOTAL=100
+
 function log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" >>"$LOGFILE"
+}
+
+function progress_init() {
+    if [ "$SILENT" = true ]; then
+        return
+    fi
+    PROGRESS_PIPE=$(mktemp -u)
+    mkfifo "$PROGRESS_PIPE"
+    whiptail --gauge "Initializing installation..." 8 70 0 <"$PROGRESS_PIPE" &
+    exec 3>"$PROGRESS_PIPE"
+    PROGRESS_CURRENT=0
+}
+
+function progress_update() {
+    local percent=$1
+    local message=$2
+    
+    if [ "$SILENT" = true ]; then
+        echo "[$percent%] $message"
+        return
+    fi
+    
+    if [ -n "$PROGRESS_PIPE" ]; then
+        echo "$percent" >&3
+        echo "XXX" >&3
+        echo "$percent" >&3
+        echo "$message" >&3
+        echo "XXX" >&3
+    fi
+    PROGRESS_CURRENT=$percent
+}
+
+function progress_close() {
+    if [ "$SILENT" = true ]; then
+        return
+    fi
+    if [ -n "$PROGRESS_PIPE" ]; then
+        exec 3>&-
+        rm -f "$PROGRESS_PIPE"
+        PROGRESS_PIPE=""
+    fi
 }
 
 function confirm() {
@@ -2824,11 +2870,16 @@ function install_or_update_photobooth() {
     local exit_code=0
     BACKUPFOLDER="photobooth-backup-$(date +%Y%m%d%H%M%S)"
 
+    # Initialize progress bar
+    progress_init
+
     if [ "$update" = true ]; then
         check_photobooth_version
-        info "Photobooth installation" "Trying to update your Photobooth.\nUpdating requirements first if needed..."
+        progress_update 5 "Checking Photobooth version...\nTrying to update your Photobooth.\nUpdating requirements first if needed..."
     else
+        progress_update 2 "Starting Photobooth installation..."
         if [ "$SILENT" = false ]; then
+            progress_close
             if whiptail --title "Photobooth Installation" \
                 --yesno "Is Photobooth the only website on this system?\n\nNOTE: If typing yes, the whole /var/www/html folder will be renamed to /var/www/$BACKUPFOLDER if it exists!" \
                 10 60; then
@@ -2840,280 +2891,336 @@ function install_or_update_photobooth() {
                 INSTALLFOLDERPATH="/var/www/html/$INSTALLFOLDER"
                 info "Photobooth Installation" "Installing in subfolder."
             fi
+            progress_init
+            progress_update 5 "Installation path configured..."
         else
             # Silent mode: default to root directory
             INSTALLFOLDER="html"
             INSTALLFOLDERPATH="/var/www/html"
-            info "Photobooth Installation" "Silent mode enabled. Installing in root directory."
+            progress_update 5 "Silent mode enabled. Installing in root directory..."
         fi
     fi
 
     if [[ -z "$INSTALLFOLDERPATH" ]]; then
+        progress_close
         confirm "Error" "The target installation path is missing.\nPlease define INSTALLFOLDERPATH first."
         return 1
     fi
 
+    progress_update 8 "Installing extra packages..."
     if install_packages "${EXTRA_PACKAGES[@]}"; then
-        info "Photobooth installation" "All extra packages installed successfully."
+        progress_update 12 "All extra packages installed successfully."
     else
+        progress_close
         confirm "Package installation" "Installation process stopped due to an error."
         return 1
     fi
 
     if [ "$SKIP_PHP" = true ]; then
-        info "Photobooth installation" "Skipping PHP setup."
-        sleep 2
+        progress_update 25 "Skipping PHP setup..."
+        sleep 1
     else
+        progress_update 15 "Preparing PHP environment..."
         if ! prepare_php_environment; then
+            progress_close
             confirm "PHP environment" "System preparation for PHP failed. Exiting."
             return 1
         fi
 
+        progress_update 20 "Installing PHP packages..."
         if install_packages "${PHP_PACKAGES[@]}"; then
-            info "Photobooth installation" "All PHP packages installed successfully."
+            progress_update 25 "All PHP packages installed successfully."
         else
+            progress_close
             confirm "PHP Package installation" "Installation process stopped due to an error."
             return 1
         fi
         if ! set_php_version_cli "$PHP_VERSION"; then
-            confirm "PHP CLI" "Failed to setup PHP CLI. Ignoring..."
+            progress_update 26 "PHP CLI setup warning (ignoring)..."
         fi
     fi
 
     if [ "$SKIP_WEBSERVER" = true ]; then
-        info "Photobooth installation" "Skipping Apache Webserver setup."
-        sleep 2
+        progress_update 35 "Skipping Apache Webserver setup..."
+        sleep 1
     else
+        progress_update 28 "Checking webserver..."
         check_webserver
         case $? in
             1)
-                info "Webserver" "Apache2 is installed and running."
+                progress_update 30 "Apache2 is installed and running."
                 setup_apache=true
                 ;;
             2)
-                comfirm "Webserver" "Nginx is installed and running. Please configure your Webserver manually if needed."
+                progress_update 30 "Nginx detected. Skipping Apache setup."
                 setup_apache=false
                 ;;
             3)
-                confirm "Webserver" "Lighttpd is installed and running. Please configure your Webserver manually if needed."
+                progress_update 30 "Lighttpd detected. Skipping Apache setup."
                 setup_apache=false
                 ;;
             4)
                 if [ "$SILENT" = false ]; then
+                    progress_close
                     if ! whiptail --title "Webserver" \
                         --yesno "One or more webservers are installed but not running. Continue installing Apache webserver?" \
                         12 60; then
                         return 1
                     fi
+                    progress_init
                  fi
-                info "Webserver" "One or more webservers are installed but not running. Continuing."
+                progress_update 30 "One or more webservers installed but not running. Continuing..."
                 setup_apache=true
                 ;;
             0)
-                info "Webserver" "No webserver detected."
+                progress_update 30 "No webserver detected. Installing Apache..."
                 setup_apache=true
                 ;;
             *)
+                progress_close
                 confirm "Webserver" "Unexpected result while checking web server."
                 return 1
             ;;
         esac
 
         if [[ "$setup_apache" = true ]]; then
+            progress_update 32 "Installing Apache webserver..."
             apache_webserver
             case $? in
                 0)
-                    info "Photobooth installation" "Apache Webserver installed and running successfully."
+                    progress_update 35 "Apache Webserver installed and running successfully."
                     ;;
                 1)
+                    progress_close
                     confirm "Photobooth installation" "Failed to install Apache Webserver packages. Further actions are halted. Check logs for details."
                     return 1
                     ;;
                 2)
-                    confirm "Photobooth installation" "Apache service could not be enabled or started. Ignoring..."
+                    progress_update 35 "Apache service warning (ignoring)..."
                     ;;
                 *)
+                    progress_close
                     confirm "Photobooth installation" "An unknown error occurred during Apache Webserver installation."
                     return 1
                     ;;
             esac
             if ! set_php_version_apache "$PHP_VERSION"; then
-                confirm "Apache Webserver" "Failed to setup PHP for $PHP_VERSION. Ignoring..."
+                progress_update 36 "PHP Apache setup warning (ignoring)..."
             fi
         fi
     fi
 
+    progress_update 38 "Installing common packages..."
     if install_packages "${COMMON_PACKAGES[@]}"; then
-        info "Photobooth installation" "All common packages installed successfully."
+        progress_update 42 "All common packages installed successfully."
     else
+        progress_close
         confirm "Package installation" "Installation process stopped due to an error."
         return 1
     fi
 
    if [ "$SKIP_NODE" = true ]; then
-        info "Photobooth installation" "Skipping Node.js and npm setup."
-        sleep 2
+        progress_update 50 "Skipping Node.js and npm setup..."
+        sleep 1
     else
+        progress_update 45 "Checking Node.js installation..."
         check_nodejs
         case $? in
             0)
-                info "Photobooth installation" "Node.js is ready for use."
+                progress_update 50 "Node.js is ready for use."
                 ;;
             1|3)
-                # For both update or downgrade required cases, update Node.js
+                progress_update 47 "Updating/downgrading Node.js..."
                 if ! update_nodejs; then
+                    progress_close
                     confirm "Node.js" "Failed to update/downgrade Node.js. Further actions are halted."
                     exit_code=1
                 fi
+                progress_update 50 "Node.js updated successfully."
                 ;;
             2)
-                info "Node.js" "Node.js is not installed. Installing..."
+                progress_update 47 "Node.js not installed. Installing..."
                 if ! update_nodejs; then
+                    progress_close
                     confirm "Node.js" "Failed to install Node.js. Further actions are halted."
                     exit_code=1
                 fi
+                progress_update 50 "Node.js installed successfully."
                 ;;
             *)
+                progress_close
                 confirm "Node.js" "An unknown error occurred while checking Node.js. Further actions are halted."
                 exit_code=1
                 ;;
         esac
 
         if [[ $exit_code -eq 1 ]]; then
+            progress_close
             confirm "Photobooth installation" "Stopping the script due to errors in Node.js handling."
             return 1
         fi
-        info "Photobooth installation" "Node.js setup completed successfully."
 
+        progress_update 52 "Checking npm..."
         if check_npm; then
-            info "Photobooth installation" "npm is ready."
+            progress_update 53 "npm is ready."
         else
-            warn "npm check failed. Proceeding with caution."
+            progress_update 53 "npm check warning (proceeding)..."
         fi
     fi
 
    if [ "$SKIP_PYTHON" = true ]; then
-        info "Photobooth installation" "Skipping Python3 setup."
-        sleep 2
+        progress_update 58 "Skipping Python3 setup..."
+        sleep 1
     else
+        progress_update 55 "Checking Python environment..."
         check_python
         case $? in
             0)
-                info "Photobooth installation" "Python environment ready for installation."
+                progress_update 58 "Python environment ready for installation."
                 ;;
             2)
-                error "Python3 not installed. Please install it manually."
+                progress_update 58 "Python3 not installed warning..."
                 ;;
             3)
-                error "Python version detection failed. Continuing installation might cause issues."
+                progress_update 58 "Python version detection warning..."
                 ;;
         esac
     fi
 
+    progress_update 60 "Setting permissions..."
     chown www-data:www-data /var/www
 
     if [ "$update" = true ]; then
+        progress_update 62 "Committing Git changes..."
         commit_git_changes
         case $? in
             0)
-                info "Git changes" "Commit process completed successfully."
+                progress_update 68 "Commit process completed successfully."
                 ;;
             1)
+                progress_close
                 confirm "Git changes" "Failed to access installation directory. Check directory permissions."
                 return 1
                 ;;
             2)
+                progress_close
                 confirm "Git changes" "Submodule fixing failed. Review submodule configuration."
                 return 1
                 ;;
             3)
+                progress_close
                 confirm "Git changes" "Failed to commit changes."
                 return 1
                 ;;
             4)
+                progress_close
                 confirm "Git changes" "Uncommitted changes detected. Update aborted by user."
                 return 1
                 ;;
             5)
+                progress_close
                 confirm "Git changes" "Failed to create backup branch."
                 return 1
                 ;;
             *)
+                progress_close
                 confirm "Git changes" "An unexpected error occurred during the commit process."
                 return 1
                 ;;
         esac
     else
+        progress_update 62 "Preparing installation directory..."
         if [ -d "$INSTALLFOLDERPATH" ]; then
-            info "Photobooth installation" "${INSTALLFOLDERPATH} found. Creating backup as ${BACKUPFOLDER}."
+            progress_update 65 "Creating backup as ${BACKUPFOLDER}..."
             if ! mv "$INSTALLFOLDERPATH" "/var/www/$BACKUPFOLDER"; then
+                progress_close
                 confirm "Backup" "Failed to create backup at /var/www/${BACKUPFOLDER}!"
                 return 1
             fi
         else
-            info "Photobooth installation" "$INSTALLFOLDERPATH not found. Proceeding with a fresh installation."
+            progress_update 68 "No existing installation found. Proceeding with fresh installation..."
         fi
 
+        progress_update 70 "Cloning Photobooth repository..."
         if ! do_git_clone; then
+            progress_close
             return 1
         fi
     fi
 
+    progress_update 75 "Installing Photobooth files and dependencies...\nThis may take up to 15 minutes..."
     start_git_install
     case $? in
         0)
-            info "Photobooth installation" "Photobooth installation completed successfully."
+            progress_update 90 "Photobooth installation completed successfully."
             ;;
         1)
+            progress_close
             confirm "Installation Error" "General failure during installation. Check logs for details."
             return 1
             ;;
         2)
+            progress_close
             confirm "Git Error" "Git operations failed. Verify repository access and branch details."
             return 1
             ;;
         3)
+            progress_close
             confirm "npm Error" "npm installation or build failed. Ensure npm is correctly configured."
             return 1
             ;;
         *)
+            progress_close
             confirm "Unexpected Error" "An unexpected error occurred. Exit code: $RESULT"
             return 1
             ;;
     esac
 
+    progress_update 92 "Setting final permissions..."
     general_permissions
 
     if [ "$update" = true ]; then
+        progress_update 95 "Fixing Git submodules..."
         fix_git_modules
         case $? in
             0)
-                info "GitHub submodules" "Submodules fixed successfully."
+                progress_update 98 "Submodules fixed successfully."
                 ;;
             1)
+                progress_close
                 confirm "GitHub submodules" "Failed to access the installation folder. Check directory permissions."
                 return 1
                 ;;
             2)
+                progress_close
                 confirm "GitHub submodules" "Failed to reset submodules. Ensure the Git repository is intact."
                 return 1
                 ;;
             3)
+                progress_close
                 confirm "GitHub submodules" "Failed to deinitialize submodules. Check Git configuration."
                 return 1
                 ;;
             4)
+                progress_close
                 confirm "GitHub submodules" "Failed to update submodules. Verify Git submodule setup."
                 return 1
                 ;;
             *)
+                progress_close
                 confirm "GitHub submodules" "An unexpected error occurred while fixing submodules."
                 return 1
                 ;;
         esac
 
+        progress_update 100 "Update completed!"
+        sleep 1
+        progress_close
         confirm "Photobooth Update" "Update done!"
     else
+        progress_update 100 "Installation completed!"
+        sleep 1
+        progress_close
         confirm "Photobooth installation" "Installation done!"
     fi
 
