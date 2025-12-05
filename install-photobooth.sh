@@ -137,12 +137,13 @@ function log() {
 }
 
 function whiptail_wrapper() {
-    # Redirect whiptail UI to /dev/tty (works for both stdout and stderr variants)
-    # Redirect whiptail result to fd 3 (which is mapped to current stdout/pipe)
-    # This ensures UI is visible and result is captured, bypassing complex fd logic
-    # Note: --output-fd 3 must be BEFORE the box command (e.g. --infobox)
-    # CRITICAL: 3>&1 must happen BEFORE >/dev/tty to capture the pipe!
-    whiptail --output-fd 3 "$@" 3>&1 1>/dev/tty 2>/dev/tty
+    # Redirect whiptail UI to original TTY (fd 4/5)
+    # Redirect whiptail result to fd 3 (Pipe)
+    # CRITICAL ORDER:
+    # 1. 3>&1  -> Save Pipe to fd 3
+    # 2. 1>&4  -> Redirect stdout to TTY (fd 4)
+    # 3. 2>&5  -> Redirect stderr to TTY (fd 5)
+    whiptail --output-fd 3 "$@" 3>&1 1>&4 2>&5
 }
 
 function progress_init() {
