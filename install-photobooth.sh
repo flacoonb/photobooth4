@@ -16,7 +16,7 @@ PHOTOBOOTH_FOUND=false
 INSTALLFOLDERPATH=""
 PHOTOBOOTH_SUBFOLDER=""
 
-# Save original stdout/stderr for whiptail dialogs
+# Save original stdout/stderr for whiptail_wrapper dialogs
 exec 4>&1 5>&2
 
 # Redirect all output to logfile (will be restored for whiptail)
@@ -128,6 +128,7 @@ REMBG_PIP_PACKAGES=(
 
 # Progress tracking
 PROGRESS_PIPE=""
+PROGRESS_ENABLED=false
 PROGRESS_CURRENT=0
 PROGRESS_TOTAL=100
 
@@ -136,8 +137,8 @@ function log() {
 }
 
 function whiptail_wrapper() {
-    # Always redirect whiptail to original stdout/stderr (fd 4 & 5)
-    whiptail "$@" 3>&1 1>&4 2>&5
+    # Always redirect whiptail_wrapper to original stdout/stderr (fd 4 & 5)
+    whiptail_wrapper "$@" 3>&1 1>&4 2>&5
 }
 
 function progress_init() {
@@ -146,10 +147,11 @@ function progress_init() {
     fi
     PROGRESS_PIPE=$(mktemp -u)
     mkfifo "$PROGRESS_PIPE"
-    # Use fd 4 (original stdout) for whiptail gauge
-    whiptail_wrapper --gauge "Initializing installation..." 8 70 0 <"$PROGRESS_PIPE" &
+    # Use fd 4 (original stdout) for whiptail_wrapper gauge - increased height for status details
+    whiptail_wrapper --gauge "Initializing installation..." 10 70 0 <"$PROGRESS_PIPE" &
     exec 3>"$PROGRESS_PIPE"
     PROGRESS_CURRENT=0
+    PROGRESS_ENABLED=true
 }
 
 function progress_update() {
@@ -184,6 +186,7 @@ function progress_close() {
         rm -f "$PROGRESS_PIPE"
         PROGRESS_PIPE=""
     fi
+    PROGRESS_ENABLED=false
 }
 
 function confirm() {
@@ -192,6 +195,12 @@ function confirm() {
     local height=${3:-10}
     local width=${4:-60}
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1: $2" >>"$LOGFILE"
+    
+    # Suppress whiptail_wrapper during progress bar to prevent UI switching
+    if [ "$PROGRESS_ENABLED" = true ]; then
+        return
+    fi
+    
     if [ "$SILENT" = true ]; then
         # Restore stdout for silent mode output
         echo "$title: $message" >&4
@@ -207,6 +216,12 @@ function info() {
     local height=${3:-10}
     local width=${4:-60}
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1: $2" >>"$LOGFILE"
+    
+    # Suppress whiptail_wrapper during progress bar to prevent UI switching
+    if [ "$PROGRESS_ENABLED" = true ]; then
+        return
+    fi
+    
     if [ "$SILENT" = true ]; then
         echo "$title: $message" >&4
     else
@@ -249,6 +264,11 @@ function print_logo() {
           @@%%%%%%%%%%%%%%%%%%%%%@
 "
 
+    # Suppress logo during progress bar to prevent UI switching
+    if [ "$PROGRESS_ENABLED" = true ]; then
+        return
+    fi
+    
     if [ "$SILENT" = true ]; then
         echo "$logo" >&4
     else
@@ -445,6 +465,38 @@ function install_packages() {
     return 0
 }
 
+function install_packages_with_progress() {
+    local base_percent=$1
+    local max_percent=$2
+    shift 2
+    local packages=("$@")
+    local total=${#packages[@]}
+    local current=0
+    
+    for package in "${packages[@]}"; do
+        current=$((current + 1))
+        local percent=$((base_percent + (max_percent - base_percent) * current / total))
+        local step_msg="Installing package $current/$total: ${package}"
+        
+        if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "ok installed"; then
+            log "Package installation: ${package} is already installed."
+            progress_update "$percent" "$step_msg\n✓ Already installed"
+        else
+            progress_update "$percent" "$step_msg\n⟳ Installing..."
+            if DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$package" >/dev/null 2>&1; then
+                log "Package installation: Successfully installed ${package}."
+                progress_update "$percent" "$step_msg\n✓ Installed successfully"
+            else
+                progress_update "$percent" "$step_msg\n✗ Installation failed"
+                log "ERROR: Failed to install ${package}."
+                return 1
+            fi
+        fi
+        sleep 0.3
+    done
+    return 0
+}
+
 function remove_package() {
     local package=$1
     if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "ok installed"; then
@@ -577,7 +629,7 @@ function self_update() {
     if ! cmp -s "$script_temp_file" "$script_abs_path"; then
         confirm "Photobooth Setup Wizard" "Updated Photobooth Setup Wizard found!"
 
-        if ! whiptail --title "Photobooth Setup Wizard" \
+        if ! whiptail_wrapper --title "Photobooth Setup Wizard" \
             --yesno "Update Photobooth Setup Wizard to latest version?" \
             12 60; then
             info "Photobooth Setup Wizard" "Skipping Photobooth Setup Wizard update."
@@ -688,12 +740,12 @@ function check_username() {
         fi
 
         if [ -z "$USERNAME" ] && [ "$SILENT" = false ]; then
-            if ! USERNAME=$(whiptail --title "Welcome to Photobooth Setup Wizard" \
+            if ! USERNAME=$(whiptail_wrapper --title "Welcome to Photobooth Setup Wizard" \
                 --inputbox "Enter your username to proceed:" \
                 8 50 "$(who -m | awk '{ print $1 }')" \
                 --cancel-button Exit --ok-button Proof \
                 3>&1 1>&2 2>&3); then
-                if whiptail --title "Photobooth Setup Wizard" \
+                if whiptail_wrapper --title "Photobooth Setup Wizard" \
                     --yesno "Are you sure you want to exit?" \
                     8 50; then
                     exit 0
@@ -859,7 +911,7 @@ function set_php_version_apache() {
 
 function set_branch() {
     local new_branch
-    if new_branch=$(whiptail --title "Set Git Branch" \
+    if new_branch=$(whiptail_wrapper --title "Set Git Branch" \
         --inputbox "Enter the branch you want to use (e.g., dev):" 10 50 "$BRANCH" 3>&1 1>&2 2>&3); then
         BRANCH="$new_branch"
         info "Git Branch" "Branch set to $BRANCH"
@@ -870,7 +922,7 @@ function set_branch() {
 
 function set_php_version() {
     local new_php_version
-    if new_php_version=$(whiptail --title "Set PHP Version" \
+    if new_php_version=$(whiptail_wrapper --title "Set PHP Version" \
         --inputbox "Enter the PHP version you want to use (e.g., 8.3):" 10 50 "$PHP_VERSION" 3>&1 1>&2 2>&3); then
         PHP_VERSION="$new_php_version"
         info "PHP Version" "PHP version set to $PHP_VERSION"
@@ -880,7 +932,7 @@ function set_php_version() {
 }
 
 function toggle_skip_webserver() {
-    if whiptail --title "Web Server Setup" \
+    if whiptail_wrapper --title "Web Server Setup" \
         --yesno "Current value: Skip web server setup = $SKIP_WEBSERVER\n\nToggle this option?" 10 50; then
         SKIP_WEBSERVER=$([ "$SKIP_WEBSERVER" = true ] && echo false || echo true)
         info "Web Server Setup" "Skip web server setup toggled to $SKIP_WEBSERVER"
@@ -890,7 +942,7 @@ function toggle_skip_webserver() {
 }
 
 function toggle_skip_php() {
-    if whiptail --title "PHP Setup" \
+    if whiptail_wrapper --title "PHP Setup" \
         --yesno "Current value: Skip PHP setup = $SKIP_PHP\n\nToggle this option?" 10 50; then
         SKIP_PHP=$([ "$SKIP_PHP" = true ] && echo false || echo true)
         info "PHP Setup" "Skip PHP setup toggled to $SKIP_PHP"
@@ -900,7 +952,7 @@ function toggle_skip_php() {
 }
 
 function toggle_skip_node() {
-    if whiptail --title "Node.js Setup" \
+    if whiptail_wrapper --title "Node.js Setup" \
         --yesno "Current value: Skip Node.js and npm setup = $SKIP_NODE\n\nToggle this option?" 10 50; then
         SKIP_NODE=$([ "$SKIP_NODE" = true ] && echo false || echo true)
         info "Node.js Setup" "Skip Node.js and npm setup toggled to $SKIP_NODE"
@@ -910,7 +962,7 @@ function toggle_skip_node() {
 }
 
 function toggle_skip_python() {
-    if whiptail --title "Python3 Setup" \
+    if whiptail_wrapper --title "Python3 Setup" \
         --yesno "Current value: Skip Python3 setup = $SKIP_PYTHON\n\nToggle this option?" 10 50; then
         SKIP_PYTHON=$([ "$SKIP_PYTHON" = true ] && echo false || echo true)
         info "Python3 Setup" "Skip Python3 setup toggled to $SKIP_PYTHON"
@@ -1428,7 +1480,7 @@ function disable_automount() {
 }
 
 function set_usb_sync() {
-    if whiptail --title "USB Sync" \
+    if whiptail_wrapper --title "USB Sync" \
         --yesno "Setup USB Sync policy?\n\nThis is needed to use the USB Sync feature of Photobooth.\nUSB Sync can be activated via Adminpanel." \
         12 60; then
 
@@ -1891,7 +1943,7 @@ function ask_go2rtc_version() {
             options+=("$((i + 1))" "${GO2RTC_VERSIONS[i]}")
         done
 
-        if CHOICE=$(whiptail --title "Select go2rtc Version" \
+        if CHOICE=$(whiptail_wrapper --title "Select go2rtc Version" \
         --menu "Available go2rtc versions:" 20 60 10 \
         "${options[@]}" 3>&1 1>&2 2>&3); then
             GO2RTC_VERSION=${GO2RTC_VERSIONS[$((CHOICE - 1))]}
@@ -2105,7 +2157,7 @@ function go2rtc_config() {
             create_go2rtc_cfg=true
             info "go2rtc config" "Silent mode: Recreating go2rtc configuration at /etc/go2rtc.yaml"
         else
-            if ! whiptail --yesno "go2rtc configuration file exists. Recreate it?" 10 60; then
+            if ! whiptail_wrapper --yesno "go2rtc configuration file exists. Recreate it?" 10 60; then
                 create_go2rtc_cfg=false
                 error "Skipping go2rtc configuration..."
             fi
@@ -2157,7 +2209,7 @@ EOF
             create_capture_wrapper=true
             info "go2rtc wrapper" "Silent mode: Recreating go2rtc capture script."
         else
-            if ! whiptail --yesno "Capture script exists. Recreate it?" 10 60; then
+            if ! whiptail_wrapper --yesno "Capture script exists. Recreate it?" 10 60; then
                 create_capture_wrapper=false
                 error "Skipping capture script..."
             fi
@@ -2840,7 +2892,7 @@ function commit_git_changes() {
         backupbranch="backup-$(date +%Y%m%d%H%M%S)"
         if [ "$SILENT" = false ]; then
             # Ask user whether to proceed with committing changes
-            if ! whiptail --title "Uncommitted Changes Detected" \
+            if ! whiptail_wrapper --title "Uncommitted Changes Detected" \
                 --yesno "Uncommitted changes detected. Do you want to commit and keep them in a backup branch?\n\nNOTE: Changes will be kept in a local branch named '$backupbranch'." \
                 12 60; then
                 error "Uncommitted changes detected. Update aborted."
@@ -2858,7 +2910,7 @@ function commit_git_changes() {
 
         GITHUB_PATCH=true
         if [ "$SILENT" = false ]; then
-            if ! whiptail --title "Local changes" \
+            if ! whiptail_wrapper --title "Local changes" \
                 --yesno "Local changes committed successfully!\nDo you want to reapply local changes after Update (if possible)?" \
                 12 60; then
                 GITHUB_PATCH=false
@@ -2897,7 +2949,7 @@ function install_or_update_photobooth() {
         progress_update 2 "Starting Photobooth installation..."
         if [ "$SILENT" = false ]; then
             progress_close
-            if whiptail --title "Photobooth Installation" \
+            if whiptail_wrapper --title "Photobooth Installation" \
                 --yesno "Is Photobooth the only website on this system?\n\nNOTE: If typing yes, the whole /var/www/html folder will be renamed to /var/www/$BACKUPFOLDER if it exists!" \
                 10 60; then
                 INSTALLFOLDER="html"
@@ -2924,10 +2976,7 @@ function install_or_update_photobooth() {
         return 1
     fi
 
-    progress_update 8 "Installing extra packages..."
-    if install_packages "${EXTRA_PACKAGES[@]}"; then
-        progress_update 12 "All extra packages installed successfully."
-    else
+    if ! install_packages_with_progress 8 12 "${EXTRA_PACKAGES[@]}"; then
         progress_close
         confirm "Package installation" "Installation process stopped due to an error."
         return 1
@@ -2944,10 +2993,7 @@ function install_or_update_photobooth() {
             return 1
         fi
 
-        progress_update 20 "Installing PHP packages..."
-        if install_packages "${PHP_PACKAGES[@]}"; then
-            progress_update 25 "All PHP packages installed successfully."
-        else
+        if ! install_packages_with_progress 20 25 "${PHP_PACKAGES[@]}"; then
             progress_close
             confirm "PHP Package installation" "Installation process stopped due to an error."
             return 1
@@ -2979,7 +3025,7 @@ function install_or_update_photobooth() {
             4)
                 if [ "$SILENT" = false ]; then
                     progress_close
-                    if ! whiptail --title "Webserver" \
+                    if ! whiptail_wrapper --title "Webserver" \
                         --yesno "One or more webservers are installed but not running. Continue installing Apache webserver?" \
                         12 60; then
                         return 1
@@ -3027,10 +3073,7 @@ function install_or_update_photobooth() {
         fi
     fi
 
-    progress_update 38 "Installing common packages..."
-    if install_packages "${COMMON_PACKAGES[@]}"; then
-        progress_update 42 "All common packages installed successfully."
-    else
+    if ! install_packages_with_progress 38 42 "${COMMON_PACKAGES[@]}"; then
         progress_close
         confirm "Package installation" "Installation process stopped due to an error."
         return 1
@@ -3249,7 +3292,7 @@ function install_or_update_photobooth() {
 # ==================================================
 function configure_mouse() {
     while true; do
-        if ! CHOICE=$(whiptail --title "Mouse Configuration" \
+        if ! CHOICE=$(whiptail_wrapper --title "Mouse Configuration" \
             --menu "Choose an option:" 15 60 3 --cancel-button Back --ok-button Select \
             "1" "Hide Mouse Cursor" \
             "2" "Restore Mouse Cursor" 3>&1 1>&2 2>&3); then
@@ -3281,7 +3324,7 @@ function printer_setup() {
        MENU_OPTIONS+=("7" "Grant Photobooth permissions for print")
        MENU_OPTIONS+=("8" "Remove Photobooth permissions for print")
 
-        if ! CHOICE=$(whiptail --title "Photobooth Printer Setup" \
+        if ! CHOICE=$(whiptail_wrapper --title "Photobooth Printer Setup" \
             --menu "Choose an option:" 20 60 10 \
             --cancel-button Back --ok-button Select \
             "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
@@ -3456,7 +3499,7 @@ function manage_permissions() {
             fi
         fi
 
-        if ! CHOICE=$(whiptail --title "Photobooth Permissions" \
+        if ! CHOICE=$(whiptail_wrapper --title "Photobooth Permissions" \
             --menu "Choose an option:" 20 60 10 \
             --cancel-button Back --ok-button Select \
             "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
@@ -3593,7 +3636,7 @@ function configure_shortcuts() {
             )
         fi
 
-        if ! CHOICE=$(whiptail --title "Photobooth Configuration" \
+        if ! CHOICE=$(whiptail_wrapper --title "Photobooth Configuration" \
              --menu "Choose an option:" 15 60 4 \
              --cancel-button Back --ok-button Select \
             "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
@@ -3649,7 +3692,7 @@ function go2rtc_setup() {
             "6" "Uninstall go2rtc and the related services" \
         )
 
-        if ! CHOICE=$(whiptail --title "go2rtc setup" \
+        if ! CHOICE=$(whiptail_wrapper --title "go2rtc setup" \
             --menu "Choose an option:" 20 60 10 \
             --ok-button Select --cancel-button Back \
             "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
@@ -3698,7 +3741,7 @@ function go2rtc_setup() {
 
         if [[ -n "$test_cmd" ]]; then
             if ! test_command "$test_cmd"; then
-                if ! whiptail --title "Command Test Failed" \
+                if ! whiptail_wrapper --title "Command Test Failed" \
                     --yesno "The preview generation test failed:\n\n$test_cmd\n\nDo you want to continue anyway?" \
                     12 70; then
                     test_cmd=''
@@ -3762,7 +3805,7 @@ function gphoto2_webcam_setup() {
             "3" "Uninstall gphoto2 webcam" \
         )
 
-        if ! CHOICE=$(whiptail --title "gphoto2 webcam setup" \
+        if ! CHOICE=$(whiptail_wrapper --title "gphoto2 webcam setup" \
             --menu "Choose an option:" 20 60 10 \
             --ok-button Select --cancel-button Back \
             "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
@@ -3903,7 +3946,7 @@ function show_install_configuration() {
             "6" "Skip Python3 setup (current: $SKIP_PYTHON)" \
         )
 
-        if ! CHOICE=$(whiptail --title "Installation configuration" \
+        if ! CHOICE=$(whiptail_wrapper --title "Installation configuration" \
             --menu "Choose an option to configure:" 20 60 10 \
             --ok-button Select --cancel-button Back \
             "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
@@ -3944,7 +3987,7 @@ function misc_menu() {
             "3" "Printer Setup"
         )
 
-        if ! CHOICE=$(whiptail --title "Photobooth Misc" \
+        if ! CHOICE=$(whiptail_wrapper --title "Photobooth Misc" \
             --menu "Choose an option:" 20 60 10 \
             --cancel-button Back --ok-button Select \
             "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
@@ -3979,7 +4022,7 @@ function rembg_setup_menu() {
     while true; do
         local choice
 
-        choice=$(whiptail --title "Rembg Setup" \
+        choice=$(whiptail_wrapper --title "Rembg Setup" \
             --menu "Choose an option:" 20 60 10 \
             --ok-button Select --cancel-button Back \
             "1" "Install rembg (background removal)" \
@@ -4035,11 +4078,11 @@ function start_page() {
             "8" "Misc"
         )
 
-        if ! CHOICE=$(whiptail --title "Photobooth Setup Wizard" \
+        if ! CHOICE=$(whiptail_wrapper --title "Photobooth Setup Wizard" \
             --menu "Choose an option:" 20 60 10 \
             --cancel-button Exit --ok-button Select \
             "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
-            if whiptail --title "Exit Setup" \
+            if whiptail_wrapper --title "Exit Setup" \
                 --yesno "Are you sure you want to exit?" \
                 8 50; then
                 exit 0
