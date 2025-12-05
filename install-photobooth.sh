@@ -141,7 +141,8 @@ function whiptail_wrapper() {
     # Redirect whiptail result to fd 3 (which is mapped to current stdout/pipe)
     # This ensures UI is visible and result is captured, bypassing complex fd logic
     # Note: --output-fd 3 must be BEFORE the box command (e.g. --infobox)
-    whiptail --output-fd 3 "$@" >/dev/tty 2>/dev/tty 3>&1
+    # CRITICAL: 3>&1 must happen BEFORE >/dev/tty to capture the pipe!
+    whiptail --output-fd 3 "$@" 3>&1 1>/dev/tty 2>/dev/tty
 }
 
 function progress_init() {
