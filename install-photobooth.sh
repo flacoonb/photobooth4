@@ -16,6 +16,12 @@ PHOTOBOOTH_FOUND=false
 INSTALLFOLDERPATH=""
 PHOTOBOOTH_SUBFOLDER=""
 
+# Save original stdout/stderr for whiptail dialogs
+exec 4>&1 5>&2
+
+# Redirect all output to logfile (will be restored for whiptail)
+exec 1>>"$LOGFILE" 2>&1
+
 # Webbrowser
 WEBBROWSER="unknown"
 
@@ -129,17 +135,19 @@ function log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" >>"$LOGFILE"
 }
 
+function whiptail_wrapper() {
+    # Always redirect whiptail to original stdout/stderr (fd 4 & 5)
+    whiptail "$@" 3>&1 1>&4 2>&5
+}
+
 function progress_init() {
     if [ "$SILENT" = true ]; then
         return
     fi
     PROGRESS_PIPE=$(mktemp -u)
     mkfifo "$PROGRESS_PIPE"
-    # Start whiptail gauge BEFORE redirecting output
-    whiptail --gauge "Initializing installation..." 8 70 0 <"$PROGRESS_PIPE" &
-    # Now save and redirect stdout/stderr to logfile
-    exec 4>&1 5>&2
-    exec 1>>"$LOGFILE" 2>&1
+    # Use fd 4 (original stdout) for whiptail gauge
+    whiptail_wrapper --gauge "Initializing installation..." 8 70 0 <"$PROGRESS_PIPE" &
     exec 3>"$PROGRESS_PIPE"
     PROGRESS_CURRENT=0
 }
@@ -151,7 +159,7 @@ function progress_update() {
     log "Progress: [$percent%] $message"
     
     if [ "$SILENT" = true ]; then
-        echo "[$percent%] $message"
+        echo "[$percent%] $message" >&4
         return
     fi
     
@@ -175,9 +183,6 @@ function progress_close() {
         wait 2>/dev/null
         rm -f "$PROGRESS_PIPE"
         PROGRESS_PIPE=""
-        # Restore original stdout/stderr
-        exec 1>&4 2>&5
-        exec 4>&- 5>&-
     fi
 }
 
@@ -188,18 +193,11 @@ function confirm() {
     local width=${4:-60}
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1: $2" >>"$LOGFILE"
     if [ "$SILENT" = true ]; then
-        echo "$title: $message"
+        # Restore stdout for silent mode output
+        echo "$title: $message" >&4
         sleep 2
     else
-        # Temporarily restore stdout/stderr for dialog
-        if [ -n "$PROGRESS_PIPE" ]; then
-            exec 1>&4 2>&5
-        fi
-        whiptail --title "$title" --msgbox "$message" "$height" "$width"
-        # Redirect back to logfile
-        if [ -n "$PROGRESS_PIPE" ]; then
-            exec 1>>"$LOGFILE" 2>&1
-        fi
+        whiptail_wrapper --title "$title" --msgbox "$message" "$height" "$width"
     fi
 }
 
@@ -210,9 +208,9 @@ function info() {
     local width=${4:-60}
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1: $2" >>"$LOGFILE"
     if [ "$SILENT" = true ]; then
-        echo "$title: $message"
+        echo "$title: $message" >&4
     else
-        whiptail --title "$title" --infobox "$message" "$height" "$width"
+        whiptail_wrapper --title "$title" --infobox "$message" "$height" "$width"
     fi
 }
 
@@ -252,11 +250,11 @@ function print_logo() {
 "
 
     if [ "$SILENT" = true ]; then
-        echo "$logo"
+        echo "$logo" >&4
     else
         local height=22
         local width=50
-        whiptail --title "Welcome!" --infobox "$logo" "$height" "$width"
+        whiptail_wrapper --title "Welcome!" --infobox "$logo" "$height" "$width"
     fi
     sleep 2
 }
