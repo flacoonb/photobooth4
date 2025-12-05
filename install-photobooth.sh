@@ -137,8 +137,8 @@ function log() {
 }
 
 function whiptail_wrapper() {
-    # Always redirect whiptail_wrapper to original stdout/stderr (fd 4 & 5)
-    whiptail_wrapper "$@" 3>&1 1>&4 2>&5
+    # Always redirect whiptail to original stdout/stderr (fd 4 & 5)
+    whiptail "$@" 3>&1 1>&4 2>&5
 }
 
 function progress_init() {
