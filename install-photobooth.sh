@@ -135,10 +135,11 @@ function progress_init() {
     fi
     PROGRESS_PIPE=$(mktemp -u)
     mkfifo "$PROGRESS_PIPE"
-    # Save current stdout/stderr and redirect to logfile
+    # Start whiptail gauge BEFORE redirecting output
+    whiptail --gauge "Initializing installation..." 8 70 0 <"$PROGRESS_PIPE" &
+    # Now save and redirect stdout/stderr to logfile
     exec 4>&1 5>&2
     exec 1>>"$LOGFILE" 2>&1
-    whiptail --gauge "Initializing installation..." 8 70 0 <"$PROGRESS_PIPE" &
     exec 3>"$PROGRESS_PIPE"
     PROGRESS_CURRENT=0
 }
