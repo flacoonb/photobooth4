@@ -137,8 +137,10 @@ function log() {
 }
 
 function whiptail_wrapper() {
-    # Always redirect whiptail to original stdout/stderr (fd 4 & 5)
-    whiptail "$@" 3>&1 1>&4 2>&5
+    # Redirect whiptail to original terminal
+    # whiptail uses stderr for dialog and user input
+    # Use standard fd swap technique but within the function
+    whiptail "$@" 3>&1 1>&4 2>&4 3>&-
 }
 
 function progress_init() {
@@ -744,7 +746,7 @@ function check_username() {
                 --inputbox "Enter your username to proceed:" \
                 8 50 "$(who -m | awk '{ print $1 }')" \
                 --cancel-button Exit --ok-button Proof \
-                3>&1 1>&2 2>&3); then
+               ); then
                 if whiptail_wrapper --title "Photobooth Setup Wizard" \
                     --yesno "Are you sure you want to exit?" \
                     8 50; then
@@ -912,7 +914,7 @@ function set_php_version_apache() {
 function set_branch() {
     local new_branch
     if new_branch=$(whiptail_wrapper --title "Set Git Branch" \
-        --inputbox "Enter the branch you want to use (e.g., dev):" 10 50 "$BRANCH" 3>&1 1>&2 2>&3); then
+        --inputbox "Enter the branch you want to use (e.g., dev):" 10 50 "$BRANCH"); then
         BRANCH="$new_branch"
         info "Git Branch" "Branch set to $BRANCH"
     else
@@ -923,7 +925,7 @@ function set_branch() {
 function set_php_version() {
     local new_php_version
     if new_php_version=$(whiptail_wrapper --title "Set PHP Version" \
-        --inputbox "Enter the PHP version you want to use (e.g., 8.3):" 10 50 "$PHP_VERSION" 3>&1 1>&2 2>&3); then
+        --inputbox "Enter the PHP version you want to use (e.g., 8.3):" 10 50 "$PHP_VERSION"); then
         PHP_VERSION="$new_php_version"
         info "PHP Version" "PHP version set to $PHP_VERSION"
     else
@@ -1945,7 +1947,7 @@ function ask_go2rtc_version() {
 
         if CHOICE=$(whiptail_wrapper --title "Select go2rtc Version" \
         --menu "Available go2rtc versions:" 20 60 10 \
-        "${options[@]}" 3>&1 1>&2 2>&3); then
+        "${options[@]}"); then
             GO2RTC_VERSION=${GO2RTC_VERSIONS[$((CHOICE - 1))]}
             info "Selected go2rtc version: $GO2RTC_VERSION"
             return 0
@@ -3295,7 +3297,7 @@ function configure_mouse() {
         if ! CHOICE=$(whiptail_wrapper --title "Mouse Configuration" \
             --menu "Choose an option:" 15 60 3 --cancel-button Back --ok-button Select \
             "1" "Hide Mouse Cursor" \
-            "2" "Restore Mouse Cursor" 3>&1 1>&2 2>&3); then
+            "2" "Restore Mouse Cursor"); then
             break
         fi
 
@@ -3327,7 +3329,7 @@ function printer_setup() {
         if ! CHOICE=$(whiptail_wrapper --title "Photobooth Printer Setup" \
             --menu "Choose an option:" 20 60 10 \
             --cancel-button Back --ok-button Select \
-            "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
+            "${MENU_OPTIONS[@]}"); then
             break
         fi
 
@@ -3502,7 +3504,7 @@ function manage_permissions() {
         if ! CHOICE=$(whiptail_wrapper --title "Photobooth Permissions" \
             --menu "Choose an option:" 20 60 10 \
             --cancel-button Back --ok-button Select \
-            "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
+            "${MENU_OPTIONS[@]}"); then
             break
         fi
 
@@ -3639,7 +3641,7 @@ function configure_shortcuts() {
         if ! CHOICE=$(whiptail_wrapper --title "Photobooth Configuration" \
              --menu "Choose an option:" 15 60 4 \
              --cancel-button Back --ok-button Select \
-            "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
+            "${MENU_OPTIONS[@]}"); then
             break
         fi
 
@@ -3695,7 +3697,7 @@ function go2rtc_setup() {
         if ! CHOICE=$(whiptail_wrapper --title "go2rtc setup" \
             --menu "Choose an option:" 20 60 10 \
             --ok-button Select --cancel-button Back \
-            "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
+            "${MENU_OPTIONS[@]}"); then
             break
         fi
 
@@ -3808,7 +3810,7 @@ function gphoto2_webcam_setup() {
         if ! CHOICE=$(whiptail_wrapper --title "gphoto2 webcam setup" \
             --menu "Choose an option:" 20 60 10 \
             --ok-button Select --cancel-button Back \
-            "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
+            "${MENU_OPTIONS[@]}"); then
             break
         fi
 
@@ -3949,7 +3951,7 @@ function show_install_configuration() {
         if ! CHOICE=$(whiptail_wrapper --title "Installation configuration" \
             --menu "Choose an option to configure:" 20 60 10 \
             --ok-button Select --cancel-button Back \
-            "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
+            "${MENU_OPTIONS[@]}"); then
             break
         fi
 
@@ -3990,7 +3992,7 @@ function misc_menu() {
         if ! CHOICE=$(whiptail_wrapper --title "Photobooth Misc" \
             --menu "Choose an option:" 20 60 10 \
             --cancel-button Back --ok-button Select \
-            "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
+            "${MENU_OPTIONS[@]}"); then
             break
         fi
 
@@ -4027,7 +4029,7 @@ function rembg_setup_menu() {
             --ok-button Select --cancel-button Back \
             "1" "Install rembg (background removal)" \
             "2" "Remove rembg" \
-            3>&1 1>&2 2>&3)
+           )
 
         local status=$?
         [[ $status -ne 0 ]] && return 0
@@ -4081,7 +4083,7 @@ function start_page() {
         if ! CHOICE=$(whiptail_wrapper --title "Photobooth Setup Wizard" \
             --menu "Choose an option:" 20 60 10 \
             --cancel-button Exit --ok-button Select \
-            "${MENU_OPTIONS[@]}" 3>&1 1>&2 2>&3); then
+            "${MENU_OPTIONS[@]}"); then
             if whiptail_wrapper --title "Exit Setup" \
                 --yesno "Are you sure you want to exit?" \
                 8 50; then
