@@ -135,6 +135,9 @@ function progress_init() {
     fi
     PROGRESS_PIPE=$(mktemp -u)
     mkfifo "$PROGRESS_PIPE"
+    # Save current stdout/stderr and redirect to logfile
+    exec 4>&1 5>&2
+    exec 1>>"$LOGFILE" 2>&1
     whiptail --gauge "Initializing installation..." 8 70 0 <"$PROGRESS_PIPE" &
     exec 3>"$PROGRESS_PIPE"
     PROGRESS_CURRENT=0
@@ -143,6 +146,8 @@ function progress_init() {
 function progress_update() {
     local percent=$1
     local message=$2
+    
+    log "Progress: [$percent%] $message"
     
     if [ "$SILENT" = true ]; then
         echo "[$percent%] $message"
@@ -164,9 +169,14 @@ function progress_close() {
         return
     fi
     if [ -n "$PROGRESS_PIPE" ]; then
+        echo "100" >&3
         exec 3>&-
+        wait 2>/dev/null
         rm -f "$PROGRESS_PIPE"
         PROGRESS_PIPE=""
+        # Restore original stdout/stderr
+        exec 1>&4 2>&5
+        exec 4>&- 5>&-
     fi
 }
 
@@ -180,7 +190,15 @@ function confirm() {
         echo "$title: $message"
         sleep 2
     else
+        # Temporarily restore stdout/stderr for dialog
+        if [ -n "$PROGRESS_PIPE" ]; then
+            exec 1>&4 2>&5
+        fi
         whiptail --title "$title" --msgbox "$message" "$height" "$width"
+        # Redirect back to logfile
+        if [ -n "$PROGRESS_PIPE" ]; then
+            exec 1>>"$LOGFILE" 2>&1
+        fi
     fi
 }
 
