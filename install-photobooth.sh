@@ -137,10 +137,10 @@ function log() {
 }
 
 function whiptail_wrapper() {
-    # Redirect whiptail to original terminal
-    # whiptail uses stderr for dialog and user input
-    # Use standard fd swap technique but within the function
-    whiptail "$@" 3>&1 1>&4 2>&4 3>&-
+    # Redirect whiptail UI to original stderr (fd 5)
+    # Redirect whiptail result to current stdout (fd 1)
+    # This works for both capturing output $(...) and normal display
+    whiptail "$@" --output-fd 1 2>&5
 }
 
 function progress_init() {
