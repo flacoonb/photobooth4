@@ -375,6 +375,86 @@ if ($action === 'reset') {
     try {
         $configurationService->update($newConfig);
         $logger->debug('New config saved.');
+
+        // Update go2rtc.yaml if aperture or ISO config exists
+        $go2rtcConfigFile = '/etc/go2rtc.yaml';
+        if (file_exists($go2rtcConfigFile)) {
+            $logger->debug('go2rtc.yaml exists, checking if update needed', [
+                'aperture' => $newConfig['commands']['go2rtc_aperture'] ?? 'not set',
+                'iso' => $newConfig['commands']['go2rtc_iso'] ?? 'not set',
+                'writable' => is_writable($go2rtcConfigFile)
+            ]);
+
+            if (is_writable($go2rtcConfigFile)) {
+                try {
+                    $currentContent = file_get_contents($go2rtcConfigFile);
+                    if ($currentContent === false) {
+                        $logger->warning('Could not read go2rtc.yaml content');
+                        throw new RuntimeException('Could not read go2rtc.yaml');
+                    }
+                    $lines = explode("\n", $currentContent);
+                    $updated = false;
+
+                    foreach ($lines as $index => $line) {
+                        if (strpos($line, 'exec:gphoto2') !== false && strpos($line, '--capture-movie') !== false) {
+                            $logger->debug('Found gphoto2 line in go2rtc.yaml');
+                            $newCommand = 'gphoto2';
+
+                            if (!empty($newConfig['commands']['go2rtc_aperture'])) {
+                                $aperture = intval($newConfig['commands']['go2rtc_aperture']);
+                                $newCommand .= ' --set-config aperture=' . $aperture;
+                                $logger->debug('Adding aperture=' . $aperture);
+                            }
+
+                            if (!empty($newConfig['commands']['go2rtc_iso'])) {
+                                $iso = intval($newConfig['commands']['go2rtc_iso']);
+                                $newCommand .= ' --set-config iso=' . $iso;
+                                $logger->debug('Adding iso=' . $iso);
+                            }
+
+                            $newCommand .= ' --capture-movie --stdout';
+
+                            if (preg_match('/^(\s+)/', $line, $indent)) {
+                                $spacing = $indent[1];
+                            } else {
+                                $spacing = '  ';
+                            }
+
+                            $lines[$index] = $spacing . 'photobooth: exec:' . $newCommand . '#killsignal=2';
+                            $logger->debug('New gphoto2 command: ' . $newCommand);
+                            $updated = true;
+                            break;
+                        }
+                    }
+
+                    if ($updated) {
+                        $newContent = implode("\n", $lines);
+                        if (file_put_contents($go2rtcConfigFile, $newContent) !== false) {
+                            $logger->info('go2rtc.yaml updated with new camera settings');
+
+                            // Restart go2rtc service
+                            exec('sudo systemctl restart go2rtc.service 2>&1', $output, $returnCode);
+                            if ($returnCode === 0) {
+                                $logger->info('go2rtc service restarted successfully');
+                            } else {
+                                $logger->warning('Failed to restart go2rtc service: ' . implode("\n", $output));
+                            }
+                        } else {
+                            $logger->error('Failed to write go2rtc.yaml file');
+                        }
+                    } else {
+                        $logger->debug('No gphoto2 line found in go2rtc.yaml to update');
+                    }
+                } catch (\Exception $e) {
+                    $logger->error('Failed to update go2rtc.yaml: ' . $e->getMessage());
+                }
+            } else {
+                $logger->warning('go2rtc.yaml is not writable. Run: sudo chmod 666 /etc/go2rtc.yaml');
+            }
+        } else {
+            $logger->debug('go2rtc.yaml does not exist, skipping camera settings update');
+        }
+
         echo json_encode([
             'status' => 'success',
             'message' => 'New config saved.',

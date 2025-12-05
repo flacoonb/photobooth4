@@ -10,6 +10,42 @@ use Photobooth\Service\LanguageService;
 use Photobooth\Service\PrintManagerService;
 use Photobooth\Utility\PathUtility;
 
+// Read go2rtc camera settings from /etc/go2rtc.yaml if available
+function readGo2rtcCameraSettings() {
+    $go2rtcConfigFile = '/etc/go2rtc.yaml';
+    $settings = ['aperture' => '', 'iso' => ''];
+
+    if (file_exists($go2rtcConfigFile) && is_readable($go2rtcConfigFile)) {
+        $content = file_get_contents($go2rtcConfigFile);
+        $lines = explode("\n", $content);
+
+        foreach ($lines as $line) {
+            if (strpos($line, 'exec:gphoto2') !== false && strpos($line, '--capture-movie') !== false) {
+                // Extract aperture value
+                if (preg_match('/--set-config\s+aperture=(\d+)/', $line, $matches)) {
+                    $settings['aperture'] = $matches[1];
+                }
+                // Extract ISO value
+                if (preg_match('/--set-config\s+iso=(\d+)/', $line, $matches)) {
+                    $settings['iso'] = $matches[1];
+                }
+                break;
+            }
+        }
+    }
+
+    return $settings;
+}
+
+// Update config with go2rtc settings if not already set
+$go2rtcSettings = readGo2rtcCameraSettings();
+if (empty($config['commands']['go2rtc_aperture']) && !empty($go2rtcSettings['aperture'])) {
+    $config['commands']['go2rtc_aperture'] = $go2rtcSettings['aperture'];
+}
+if (empty($config['commands']['go2rtc_iso']) && !empty($go2rtcSettings['iso'])) {
+    $config['commands']['go2rtc_iso'] = $go2rtcSettings['iso'];
+}
+
 /*
  ** This file defines the admin panel of photobooth. The admin panel definition is done in a JSON variable and structured as follows
  **
@@ -3841,6 +3877,22 @@ return [
             'placeholder' => $defaultConfig['commands']['shutdown'],
             'name' => 'commands[shutdown]',
             'value' => htmlentities($config['commands']['shutdown'] ?? ''),
+        ],
+        'go2rtc_aperture' => [
+            'view' => 'expert',
+            'type' => 'gphoto2-select',
+            'gphoto2_setting' => 'aperture',
+            'placeholder' => 'Select aperture or enter index manually',
+            'name' => 'commands[go2rtc_aperture]',
+            'value' => htmlentities($config['commands']['go2rtc_aperture'] ?? ''),
+        ],
+        'go2rtc_iso' => [
+            'view' => 'expert',
+            'type' => 'gphoto2-select',
+            'gphoto2_setting' => 'iso',
+            'placeholder' => 'Select ISO or enter index manually',
+            'name' => 'commands[go2rtc_iso]',
+            'value' => htmlentities($config['commands']['go2rtc_iso'] ?? ''),
         ],
     ],
     'reset' => [

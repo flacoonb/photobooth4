@@ -910,6 +910,80 @@ class AdminInput
             </script>
         ';
     }
+
+    public static function renderGphoto2Select(array $setting, string $label): string
+    {
+        $languageService = LanguageService::getInstance();
+        $className = 'w-full h-10 border-2 border-solid border-gray-300 focus:border-brand-1 rounded-md px-2 mt-auto';
+
+        $attributes = '';
+        if (isset($setting['attributes'])) {
+            foreach ($setting['attributes'] as $key => $prop) {
+                $attributes .= $key . '="' . $prop . '" ';
+            }
+        }
+
+        $gphoto2Setting = $setting['gphoto2_setting'] ?? '';
+        $loadingText = $languageService->translate('loading');
+        $errorText = $languageService->translate('error');
+
+        return self::renderHeadline($label) . '
+            <div class="gphoto2-select-container">
+                <select
+                    class="' . $className . ' gphoto2-select"
+                    name="' . $setting['name'] . '"
+                    data-gphoto2-setting="' . $gphoto2Setting . '"
+                    data-current-value="' . $setting['value'] . '"
+                    ' . $attributes . '
+                >
+                    <option value="' . $setting['value'] . '" selected>' . ($setting['value'] !== '' ? $setting['value'] : $loadingText . '...') . '</option>
+                </select>
+                <div class="gphoto2-select-status text-xs mt-1 text-gray-500"></div>
+            </div>
+            <script>
+            (function() {
+                const select = document.querySelector("select[name=\'' . $setting['name'] . '\']");
+                const statusDiv = select.parentElement.querySelector(".gphoto2-select-status");
+                const gphoto2Setting = select.dataset.gphoto2Setting;
+                const currentValue = select.dataset.currentValue;
+
+                if (!gphoto2Setting) {
+                    statusDiv.textContent = "Error: No gphoto2 setting specified";
+                    statusDiv.className = "gphoto2-select-status text-xs mt-1 text-red-500";
+                    return;
+                }
+
+                statusDiv.textContent = "' . $loadingText . '...";
+
+                fetch("/api/getGphoto2Config.php?setting=" + encodeURIComponent(gphoto2Setting))
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.choices) {
+                            select.innerHTML = "";
+                            data.choices.forEach(choice => {
+                                const option = document.createElement("option");
+                                option.value = choice.index;
+                                option.textContent = choice.value;
+                                if (choice.index === currentValue || choice.index.toString() === currentValue) {
+                                    option.selected = true;
+                                }
+                                select.appendChild(option);
+                            });
+                            statusDiv.textContent = data.choices.length + " ' . $languageService->translate('options') . '" + (data.current ? " (Current: " + data.current + ")" : "");
+                            statusDiv.className = "gphoto2-select-status text-xs mt-1 text-green-600";
+                        } else {
+                            statusDiv.textContent = "' . $errorText . ': " + (data.error || "Unknown error");
+                            statusDiv.className = "gphoto2-select-status text-xs mt-1 text-red-500";
+                        }
+                    })
+                    .catch(error => {
+                        statusDiv.textContent = "' . $errorText . ': " + error.message;
+                        statusDiv.className = "gphoto2-select-status text-xs mt-1 text-red-500";
+                    });
+            })();
+            </script>
+        ';
+    }
     public static function renderToggleButtonGroup(array $setting, string $label): string
     {
         $settingName = $setting['name'];

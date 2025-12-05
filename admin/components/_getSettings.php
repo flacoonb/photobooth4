@@ -74,6 +74,9 @@ foreach ($configsetup as $section => $fields) {
             case 'select':
                 echo AdminInput::renderSelect($setting, $i18ntag);
                 break;
+            case 'gphoto2-select':
+                echo AdminInput::renderGphoto2Select($setting, $i18ntag);
+                break;
             case 'button':
                 echo AdminInput::renderButton($setting, $i18ntag, $key, $config);
                 break;
