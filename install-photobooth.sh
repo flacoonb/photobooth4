@@ -488,13 +488,43 @@ function install_packages_with_progress() {
             progress_update "$percent" "$step_msg\n✓ Already installed"
         else
             progress_update "$percent" "$step_msg\n⟳ Installing..."
-            if DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$package" >/dev/null 2>&1; then
-                log "Package installation: Successfully installed ${package}."
-                progress_update "$percent" "$step_msg\n✓ Installed successfully"
+            
+            # Handle PHP versioned packages with fallback
+            if [[ "$package" =~ ^php[0-9]+\.[0-9]+- ]] || [[ "$package" =~ ^libapache2-mod-php[0-9]+\.[0-9]+$ ]]; then
+                local pkg_generic
+                pkg_generic=$(echo "$package" | sed -E "s/[0-9]+\.[0-9]+-/-/; s/[0-9]+\.[0-9]+$//")
+
+                if DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$package" >>"$LOGFILE" 2>&1; then
+                    log "Package installation: Successfully installed ${package}."
+                    progress_update "$percent" "$step_msg\n✓ Installed successfully"
+                else
+                    log "Package ${package} not available, falling back to ${pkg_generic}..."
+                    progress_update "$percent" "$step_msg\n⟳ Fallback to ${pkg_generic}..."
+                    if DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$pkg_generic" >>"$LOGFILE" 2>&1; then
+                        log "Package installation: Successfully installed ${pkg_generic}."
+                        progress_update "$percent" "$step_msg\n✓ Installed successfully (fallback)"
+                    else
+                        progress_update "$percent" "$step_msg\n✗ Installation failed"
+                        log "ERROR: Failed to install ${package} and fallback ${pkg_generic}."
+                        return 1
+                    fi
+                fi
             else
-                progress_update "$percent" "$step_msg\n✗ Installation failed"
-                log "ERROR: Failed to install ${package}."
-                return 1
+                # Regular package install
+                if DEBIAN_FRONTEND=noninteractive apt-get -qq install -y "$package" >>"$LOGFILE" 2>&1; then
+                    log "Package installation: Successfully installed ${package}."
+                    progress_update "$percent" "$step_msg\n✓ Installed successfully"
+                else
+                    # Special case: ignore failure on software-properties-common
+                    if [[ "$package" == "software-properties-common" ]]; then
+                        log "Ignoring failed install of ${package}."
+                        progress_update "$percent" "$step_msg\n⚠ Ignored failure"
+                    else
+                        progress_update "$percent" "$step_msg\n✗ Installation failed"
+                        log "ERROR: Failed to install ${package}."
+                        return 1
+                    fi
+                fi
             fi
         fi
         sleep 0.3
