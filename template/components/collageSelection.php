@@ -13,76 +13,118 @@ use Photobooth\Collage;
  */
 function getLayoutPreviewSvg(CollageLayoutEnum $layout): string
 {
-    $svg = '<svg class="collageSelector__preview" viewBox="0 0 120 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">';
+    $svg = '<svg class="collageSelector__preview" viewBox="0 0 180 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">';
 
     // All layouts use 120x180 viewBox (2:3 aspect ratio)
     switch ($layout) {
         case CollageLayoutEnum::TWO_PLUS_TWO_1:
-        case CollageLayoutEnum::TWO_PLUS_TWO_2:
-            // 2+2 Layout: 4 equal squares
+            // 2+2 Layout Option 1: 4 equal squares, no padding
             $positions = [
-                ['x' => 0, 'y' => 0, 'w' => 60, 'h' => 90, 'num' => 1],
-                ['x' => 60, 'y' => 0, 'w' => 60, 'h' => 90, 'num' => 2],
-                ['x' => 0, 'y' => 90, 'w' => 60, 'h' => 90, 'num' => 3],
-                ['x' => 60, 'y' => 90, 'w' => 60, 'h' => 90, 'num' => 4],
+                ['x' => 0, 'y' => 0, 'w' => 90, 'h' => 60, 'num' => 1],
+                ['x' => 90, 'y' => 0, 'w' => 90, 'h' => 60, 'num' => 2],
+                ['x' => 0, 'y' => 60, 'w' => 90, 'h' => 60, 'num' => 3],
+                ['x' => 90, 'y' => 60, 'w' => 90, 'h' => 60, 'num' => 4],
+            ];
+            break;
+
+        case CollageLayoutEnum::TWO_PLUS_TWO_2:
+            // 2+2 Layout Option 2: 4 equal squares with padding
+            $positions = [
+                ['x' => 14, 'y' => 10, 'w' => 72, 'h' => 48, 'num' => 1],
+                ['x' => 94, 'y' => 10, 'w' => 72, 'h' => 48, 'num' => 2],
+                ['x' => 14, 'y' => 62, 'w' => 72, 'h' => 48, 'num' => 3],
+                ['x' => 94, 'y' => 62, 'w' => 72, 'h' => 48, 'num' => 4],
             ];
             break;
 
         case CollageLayoutEnum::ONE_PLUS_THREE_1:
-            // 1+3 Layout Option 1: Top full width, bottom 3 equal
+            // 1+3 Layout Option 1: 1 large top-right, 3 small on bottom
             $positions = [
-                ['x' => 0, 'y' => 0, 'w' => 120, 'h' => 90, 'num' => 1],
-                ['x' => 0, 'y' => 90, 'w' => 40, 'h' => 90, 'num' => 2],
-                ['x' => 40, 'y' => 90, 'w' => 40, 'h' => 90, 'num' => 3],
-                ['x' => 80, 'y' => 90, 'w' => 40, 'h' => 90, 'num' => 4],
+                ['x' => 87, 'y' => 10, 'w' => 88, 'h' => 58, 'num' => 1],
+                ['x' => 5, 'y' => 75, 'w' => 54, 'h' => 36, 'num' => 2],
+                ['x' => 63, 'y' => 75, 'w' => 54, 'h' => 36, 'num' => 3],
+                ['x' => 121, 'y' => 75, 'w' => 54, 'h' => 36, 'num' => 4],
             ];
             break;
 
         case CollageLayoutEnum::ONE_PLUS_THREE_2:
-            // 1+3 Layout Option 2: Left full height, right stacked
+            // 1+3 Layout Option 2: 1 large top-left, 3 small on bottom
             $positions = [
-                ['x' => 0, 'y' => 0, 'w' => 40, 'h' => 180, 'num' => 1],
-                ['x' => 40, 'y' => 0, 'w' => 40, 'h' => 90, 'num' => 2],
-                ['x' => 80, 'y' => 0, 'w' => 40, 'h' => 90, 'num' => 3],
-                ['x' => 40, 'y' => 90, 'w' => 80, 'h' => 90, 'num' => 4],
+                ['x' => 5, 'y' => 10, 'w' => 88, 'h' => 58, 'num' => 1],
+                ['x' => 5, 'y' => 75, 'w' => 54, 'h' => 36, 'num' => 2],
+                ['x' => 63, 'y' => 75, 'w' => 54, 'h' => 36, 'num' => 3],
+                ['x' => 121, 'y' => 75, 'w' => 54, 'h' => 36, 'num' => 4],
             ];
             break;
 
         case CollageLayoutEnum::THREE_PLUS_ONE_1:
-            // 3+1 Layout: Top 3 equal, bottom full width
+            // 3+1 Layout: 3 small on top, 1 large bottom-left
             $positions = [
-                ['x' => 0, 'y' => 0, 'w' => 40, 'h' => 90, 'num' => 1],
-                ['x' => 40, 'y' => 0, 'w' => 40, 'h' => 90, 'num' => 2],
-                ['x' => 80, 'y' => 0, 'w' => 40, 'h' => 90, 'num' => 3],
-                ['x' => 0, 'y' => 90, 'w' => 120, 'h' => 90, 'num' => 4],
+                ['x' => 5, 'y' => 52, 'w' => 88, 'h' => 58, 'num' => 1],
+                ['x' => 5, 'y' => 10, 'w' => 54, 'h' => 36, 'num' => 2],
+                ['x' => 63, 'y' => 10, 'w' => 54, 'h' => 36, 'num' => 3],
+                ['x' => 121, 'y' => 10, 'w' => 54, 'h' => 36, 'num' => 4],
             ];
             break;
 
         case CollageLayoutEnum::ONE_PLUS_TWO_1:
-            // 1+2 Layout: Top full width, bottom 2 equal
+            // 1+2 Layout: 1 large left, 2 small right stacked
             $positions = [
-                ['x' => 0, 'y' => 0, 'w' => 120, 'h' => 90, 'num' => 1],
-                ['x' => 0, 'y' => 90, 'w' => 60, 'h' => 90, 'num' => 2],
-                ['x' => 60, 'y' => 90, 'w' => 60, 'h' => 90, 'num' => 3],
+                ['x' => 10, 'y' => 10, 'w' => 90, 'h' => 100, 'num' => 1],
+                ['x' => 110, 'y' => 10, 'w' => 60, 'h' => 48, 'num' => 2],
+                ['x' => 110, 'y' => 62, 'w' => 60, 'h' => 48, 'num' => 3],
             ];
             break;
 
         case CollageLayoutEnum::TWO_PLUS_ONE_1:
-            // 2+1 Layout: Top 2 equal, bottom full width
+            // 2+1 Layout: 2 on top, 1 bottom left
             $positions = [
-                ['x' => 0, 'y' => 0, 'w' => 60, 'h' => 90, 'num' => 1],
-                ['x' => 60, 'y' => 0, 'w' => 60, 'h' => 90, 'num' => 2],
-                ['x' => 0, 'y' => 90, 'w' => 120, 'h' => 90, 'num' => 3],
+                ['x' => 10, 'y' => 10, 'w' => 60, 'h' => 48, 'num' => 1],
+                ['x' => 110, 'y' => 10, 'w' => 60, 'h' => 48, 'num' => 2],
+                ['x' => 10, 'y' => 62, 'w' => 60, 'h' => 48, 'num' => 3],
             ];
             break;
 
+        case CollageLayoutEnum::TWO_X_FOUR_1:
+        case CollageLayoutEnum::TWO_X_FOUR_2:
+        case CollageLayoutEnum::TWO_X_FOUR_3:
+        case CollageLayoutEnum::TWO_X_FOUR_4:
+            // 2x4 Layout: 4 photos duplicated (printed as strip, cut in middle)
+            $positions = [
+                // Left half
+                ['x' => 6, 'y' => 8, 'w' => 82, 'h' => 23, 'num' => 1],
+                ['x' => 6, 'y' => 34, 'w' => 82, 'h' => 23, 'num' => 2],
+                ['x' => 6, 'y' => 60, 'w' => 82, 'h' => 23, 'num' => 3],
+                ['x' => 6, 'y' => 86, 'w' => 82, 'h' => 23, 'num' => 4],
+                // Right half (duplicates)
+                ['x' => 92, 'y' => 8, 'w' => 82, 'h' => 23, 'num' => 1],
+                ['x' => 92, 'y' => 34, 'w' => 82, 'h' => 23, 'num' => 2],
+                ['x' => 92, 'y' => 60, 'w' => 82, 'h' => 23, 'num' => 3],
+                ['x' => 92, 'y' => 86, 'w' => 82, 'h' => 23, 'num' => 4],
+            ];
+            break;
+
+        case CollageLayoutEnum::TWO_X_THREE_1:
+        case CollageLayoutEnum::TWO_X_THREE_2:
+            // 2x3 Layout: 3 photos duplicated (printed as strip, cut in middle)
+            $positions = [
+                // Left half
+                ['x' => 6, 'y' => 10, 'w' => 82, 'h' => 30, 'num' => 1],
+                ['x' => 6, 'y' => 45, 'w' => 82, 'h' => 30, 'num' => 2],
+                ['x' => 6, 'y' => 80, 'w' => 82, 'h' => 30, 'num' => 3],
+                // Right half (duplicates)
+                ['x' => 92, 'y' => 10, 'w' => 82, 'h' => 30, 'num' => 1],
+                ['x' => 92, 'y' => 45, 'w' => 82, 'h' => 30, 'num' => 2],
+                ['x' => 92, 'y' => 80, 'w' => 82, 'h' => 30, 'num' => 3],
+            ];
+            break;
         default:
             // Fallback for other layouts
             $positions = [
-                ['x' => 0, 'y' => 0, 'w' => 60, 'h' => 90, 'num' => 1],
-                ['x' => 60, 'y' => 0, 'w' => 60, 'h' => 90, 'num' => 2],
-                ['x' => 0, 'y' => 90, 'w' => 60, 'h' => 90, 'num' => 3],
-                ['x' => 60, 'y' => 90, 'w' => 60, 'h' => 90, 'num' => 4],
+                ['x' => 0, 'y' => 0, 'w' => 90, 'h' => 60, 'num' => 1],
+                ['x' => 90, 'y' => 0, 'w' => 90, 'h' => 60, 'num' => 2],
+                ['x' => 0, 'y' => 60, 'w' => 90, 'h' => 60, 'num' => 3],
+                ['x' => 90, 'y' => 60, 'w' => 90, 'h' => 60, 'num' => 4],
             ];
             break;
     }
@@ -108,6 +150,24 @@ function getLayoutPreviewSvg(CollageLayoutEnum $layout): string
             $pos['num']
         );
     }
+
+    // Add cut line for 2x4 and 2x3 layouts (shows where strip is cut)
+    if (
+        $layout === CollageLayoutEnum::TWO_X_FOUR_1 ||
+        $layout === CollageLayoutEnum::TWO_X_FOUR_2 ||
+        $layout === CollageLayoutEnum::TWO_X_FOUR_3 ||
+        $layout === CollageLayoutEnum::TWO_X_FOUR_4 ||
+        $layout === CollageLayoutEnum::TWO_X_THREE_1 ||
+        $layout === CollageLayoutEnum::TWO_X_THREE_2
+    ) {
+        // Dashed line in middle showing where it will be cut
+        $svg .= '<line x1="90" y1="0" x2="90" y2="120" stroke="#FF0000" stroke-width="2" stroke-dasharray="5,5" opacity="0.8"/>';
+        // Scissors icon or text at middle
+        $svg .= '<text x="90" y="6" text-anchor="middle" fill="#FF0000" font-size="8" font-weight="bold">✂</text>';
+    }
+
+    // Add outer border to show final photo format
+    $svg .= '<rect x="0" y="0" width="180" height="120" fill="none" stroke="#666666" stroke-width="1" rx="2"/>';
 
     $svg .= '</svg>';
     return $svg;
