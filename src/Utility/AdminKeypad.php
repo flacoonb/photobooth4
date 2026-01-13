@@ -6,15 +6,33 @@ class AdminKeypad
 {
     public static function login(string $userPin, array $login): bool
     {
-        if ($userPin === $login['pin']) {
+        if (self::isValidPin($userPin, $login['pin'] ?? null)) {
+            session_regenerate_id(true);
             $_SESSION['auth'] = true;
             return true;
-        } elseif ($login['rental_keypad'] && $userPin == $login['rental_pin']) {
+        } elseif (($login['rental_keypad'] ?? false) && self::isValidPin($userPin, $login['rental_pin'] ?? null)) {
+            session_regenerate_id(true);
             $_SESSION['rental'] = true;
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Validate user PIN against stored (plain or hashed) value.
+     */
+    protected static function isValidPin(string $userPin, ?string $storedPin): bool
+    {
+        if ($storedPin === null || $storedPin === '') {
+            return false;
+        }
+
+        if (self::isHashedPin($storedPin)) {
+            return password_verify($userPin, $storedPin);
+        }
+
+        return hash_equals($storedPin, $userPin);
     }
 
     public static function render(): string
@@ -38,7 +56,7 @@ class AdminKeypad
         return implode(PHP_EOL, $content);
     }
 
-    protected static function renderKey(int|string $key = null): string
+    protected static function renderKey(null|int|string $key = null): string
     {
         $containerClass = 'keypad_key peer flex items-center justify-center p-2 hover:text-brand-1 transition-all';
         $keyClass = '
@@ -47,7 +65,7 @@ class AdminKeypad
                 border border-solid border-gray-200 rounded-full
                 hover:border-brand-1 hover:text-brand-1 hover:scale-110
                 active:border-brand-1 active:bg-brand-1 active:text-white
-                outline-none focus:outline-none focus:ring-2 focus:ring-brand-1 active:ring-2 active:ring-brand-1 active:outline-none
+                outline-hidden focus:outline-hidden focus:ring-2 focus:ring-brand-1 active:ring-2 active:ring-brand-1 active:outline-hidden
             ';
 
         $content = [];
@@ -73,16 +91,16 @@ class AdminKeypad
         $containerClass = '
             keypad_keybox
             flex items-center justify-center w-10 h-14
-            border border-solid border-gray-200 bg-gray-50 rounded m-2
+            border border-solid border-gray-200 bg-gray-50 rounded-sm m-2
             [&.active]:border-brand-1
-            [&.error]:animate-error [&.error]:border-red-500 [&.error]:border-opacity-70
+            [&.error]:animate-error [&.error]:border-red-500/70
         ';
         $dotClass = '
             keypad_key
             w-3 h-3 rounded-full bg-gray-400
             [&.active]:border-2 [&.active]:border-solid [&.active]:border-brand-1 [&.active]:bg-transparent
             [&.checked]:bg-brand-1
-            [&.error]:bg-red-500 [&.error]:bg-opacity-70
+            [&.error]:bg-red-500/70
         ';
 
         $content = [];
@@ -101,5 +119,30 @@ class AdminKeypad
         $content[] = '</div>';
 
         return implode(PHP_EOL, $content);
+    }
+
+    /**
+     * Detects if a PIN string is password_hash output.
+     */
+    public static function isHashedPin(?string $storedPin): bool
+    {
+        if ($storedPin === null || $storedPin === '') {
+            return false;
+        }
+
+        $info = password_get_info($storedPin);
+        return ($info['algo'] ?? 0) !== 0;
+    }
+
+    /**
+     * Return display length: real length for plain PIN, 4 for hashed.
+     */
+    public static function pinLength(?string $storedPin): int
+    {
+        if ($storedPin === null || $storedPin === '') {
+            return 0;
+        }
+
+        return self::isHashedPin($storedPin) ? 4 : strlen($storedPin);
     }
 }

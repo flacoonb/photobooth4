@@ -1,6 +1,6 @@
 <?php
 
-require_once '../../lib/boot.php';
+require_once __DIR__ . '/../admin_boot.php';
 
 use Photobooth\FileUploader;
 use Photobooth\Service\ApplicationService;
@@ -8,15 +8,11 @@ use Photobooth\Service\LanguageService;
 use Photobooth\Utility\PathUtility;
 use Photobooth\Service\LoggerService;
 
-// Login / Authentication check
-if (!(
-    !$config['login']['enabled'] ||
-    (!$config['protect']['localhost_admin'] && isset($_SERVER['SERVER_ADDR']) &&  $_SERVER['REMOTE_ADDR'] === $_SERVER['SERVER_ADDR']) ||
-    (isset($_SESSION['auth']) && $_SESSION['auth'] === true) || !$config['protect']['admin']
-)) {
-    header('location: ' . PathUtility::getPublicPath('login'));
-    exit();
+// CSRF token helper
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
+$csrfToken = $_SESSION['csrf_token'];
 
 $logger = LoggerService::getInstance()->getLogger('main');
 $logger->debug(basename($_SERVER['PHP_SELF']));
@@ -36,26 +32,33 @@ $btnClass = 'w-full h-12 rounded-full bg-brand-1 text-white flex items-center ju
 $max_file_size = ini_get('upload_max_filesize');
 
 if (isset($_POST['submit'])) {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $errors['csrf'] = 'csrf';
+    }
+
     $folderName = $_POST['folder_name'];
     $uploadedFiles = $_FILES['files'];
 
-    $uploader = new FileUploader($folderName, $uploadedFiles, $logger);
-    $response = $uploader->uploadFiles();
+    if (!isset($errors['csrf'])) {
+        $uploader = new FileUploader($folderName, $uploadedFiles, $logger);
+        $response = $uploader->uploadFiles();
 
-    list($success, $message, $errors, $uploadedFiles, $failedFiles) = [
-        $response['success'],
-        $response['message'],
-        $response['errors'],
-        $response['uploadedFiles'],
-        $response['failedFiles']
-    ];
+        list($success, $message, $errors, $uploadedFiles, $failedFiles) = [
+            $response['success'],
+            $response['message'],
+            $response['errors'],
+            $response['uploadedFiles'],
+            $response['failedFiles']
+        ];
+    }
 }
 ?>
 
 <div class="w-full h-screen grid place-items-center absolute bg-brand-2 px-6 py-12 overflow-x-hidden overflow-y-auto">
     <div class="w-full flex items-center justify-center flex-col">
-        <div class="w-full max-w-xl h-144 rounded-lg p-8 bg-white flex flex-col shadow-xl">
+        <div class="w-full max-w-xl rounded-lg p-8 bg-white flex flex-col shadow-xl">
             <form action="<?php echo $_SERVER['PHP_SELF']; ?>" method="POST" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
                 <div class="w-full flex flex-col items-center justify-center text-2xl font-bold text-brand-1 mb-2">
                     File uploader
                 </div>
@@ -64,6 +67,7 @@ if (isset($_POST['submit'])) {
                     <label class="<?= $labelClass ?>" for="folder_name"><?=$languageService->translate('upload_folder')?></label>
                     <select class="<?= $inputClass ?>" name="folder_name">
                         <option value="private/images/background" <?= $folderName === 'private/images/background' ? 'selected' : '' ?>>images/background</option>
+                        <option value="private/images/keyingBackgrounds" <?= $folderName === 'private/images/keyingBackgrounds' ? 'selected' : '' ?>>images/keyingBackgrounds</option>
                         <option value="private/images/frames" <?= $folderName === 'private/images/frames' ? 'selected' : '' ?>>images/frames</option>
                         <option value="private/images/logo" <?= $folderName === 'private/images/logo' ? 'selected' : '' ?>>images/logo</option>
                         <option value="private/images/placeholder" <?= $folderName === 'private/images/placeholder' ? 'selected' : '' ?>>images/placeholder</option>
@@ -75,16 +79,21 @@ if (isset($_POST['submit'])) {
                     <label class="<?= $labelClass ?>" for="files"><?=$languageService->translate('upload_selection')?></label>
                     <input class="<?= $labelClass ?>" type="file" name="files[]" id="files" multiple accept="image/*, video/*, .ttf" required>
                     <div class="my-2"><?= $languageService->translate('file_upload_max_size') ?> <?= $max_file_size ?></div>
+                    <?php
+                        if (isset($errors['csrf'])) {
+                            echo '<div class="flex flex-col justify-between p-2 rounded-sm bg-red-300 text-red-800 border-2 border-red-800">' . $languageService->translate('invalid_session') . '</div>';
+                        }
+?>
                 </div>
 
                 <?php
-                    if (count($failedFiles) > 0) {
-                        echo '<div class="flex flex-col gap-2">';
-                        foreach ($failedFiles as $fileName => $reason) {
-                            echo '<div class="flex flex-col justify-between p-2 rounded bg-red-300 text-red-800 border-2 border-red-800"><div class="col-span-1">' . $fileName . '</div><div class="col-span-1">' . $languageService->translate($reason) . '</div></div>';
-                        }
-                        echo '</div>';
-                    }
+if (count($failedFiles) > 0) {
+    echo '<div class="flex flex-col gap-2">';
+    foreach ($failedFiles as $fileName => $reason) {
+        echo '<div class="flex flex-col justify-between p-2 rounded-sm bg-red-300 text-red-800 border-2 border-red-800"><div class="col-span-1">' . $fileName . '</div><div class="col-span-1">' . $languageService->translate($reason) . '</div></div>';
+    }
+    echo '</div>';
+}
 ?>
 
                 <div class="mt-6">

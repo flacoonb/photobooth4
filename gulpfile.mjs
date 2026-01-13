@@ -4,23 +4,77 @@ import concat from 'gulp-concat';
 import filters from 'gulp-filter';
 import gulp from 'gulp';
 import nodeSassImporter from 'node-sass-importer';
-import postcss from 'gulp-postcss';
+import postcss from 'postcss';
 import rename from 'gulp-rename';
 import sass from 'gulp-dart-sass';
-import tailwindcss from 'tailwindcss';
+import { promisify } from 'util';
+import { compileAsync } from 'sass'
+import tailwindcss from '@tailwindcss/postcss';
 import twAdminConfig from './config/tailwind.admin.config.mjs';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
-gulp.task('sass', function () {
-  const twFilter = filters(['**/*', '!tailwind.admin.scss']);
+const writeFile = promisify(fs.writeFile);
 
-  return gulp
-    .src('./assets/sass/**/*.scss')
-    .pipe(twFilter)
-    .pipe(sass().on('error', sass.logError)) // Use sass() without .sync
-    .pipe(gulp.dest('./resources/css'));
+gulp.task('sass', async function () {
+  try {
+    const scssDir = './assets/sass';
+    const outputDir = './resources/css';
+
+    const privateScssDir = './private/sass';
+
+    // Ensure the private sass directory exists
+    fs.mkdirSync(privateScssDir, { recursive: true });
+    // Create an optional _custom.scss file if it doesn't exist
+    const optionalCustomCss = path.join(privateScssDir, '_custom.scss');
+    if (!fs.existsSync(optionalCustomCss)) {
+      fs.writeFileSync(
+        optionalCustomCss,
+        '// auto-generated stub for optional custom overrides\n'
+      );
+    }
+
+    const files = fs.readdirSync(scssDir);
+
+    const scssFiles = files.filter(file => path.extname(file) === '.scss' && file !== 'tailwind.admin.scss');
+
+    for (const file of scssFiles) {
+      const inputPath = path.join(scssDir, file);
+      const outputPath = path.join(outputDir, path.basename(file, '.scss') + '.css');
+
+      const result = await compileAsync(inputPath, {
+        loadPaths: [scssDir],
+      });
+
+      await writeFile(outputPath, result.css);
+      console.log(`Compiled ${file} to ${outputPath}`);
+    }
+  } catch (error) {
+    console.error('Error compiling Sass:', error);
+  }
+});
+
+gulp.task('tailwind-admin', async function () {
+  try {
+    const inputPath = './assets/sass/tailwind.admin.scss';
+    const outputPath = './resources/css/tailwind.admin.css';
+
+    const result = await compileAsync(inputPath, {
+      loadPaths: ['./assets/sass'],
+      importer: nodeSassImporter,
+    });
+
+    const processedCss = await postcss([tailwindcss(twAdminConfig), autoprefixer()]).process(result.css, {
+      from: inputPath,
+      to: outputPath,
+    });
+
+    await writeFile(outputPath, processedCss.css);
+    console.log(`Compiled and processed Tailwind Admin SCSS to ${outputPath}`);
+  } catch (error) {
+    console.error('Error compiling Tailwind Admin:', error);
+  }
 });
 
 gulp.task('js', function () {
@@ -31,27 +85,6 @@ gulp.task('js', function () {
       ignore: ['assets/js/sync-to-drive.js', 'assets/js/remotebuzzer-server.js']
     }))
     .pipe(gulp.dest('./resources/js'));
-});
-
-gulp.task('tailwind-admin', function () {
-  const plugins = [
-    tailwindcss(twAdminConfig),
-    autoprefixer(),
-  ];
-
-  return gulp
-    .src('./assets/sass/tailwind.admin.scss')
-    .pipe(sass({
-      importer: nodeSassImporter
-    }).on('error', sass.logError))
-    .pipe(rename({
-      extname: '.scss'
-    }))
-    .pipe(postcss(plugins))
-    .pipe(rename({
-      extname: '.css'
-    }))
-    .pipe(gulp.dest('./resources/css'));
 });
 
 gulp.task('js-admin', function () {
@@ -65,6 +98,7 @@ gulp.task('js-admin', function () {
       './assets/js/admin/imageSelect.js',
       './assets/js/admin/fontSelect.js',
       './assets/js/admin/videoSelect.js',
+      './assets/js/admin/themes.js',
       './assets/js/admin/toast.js',
     ])
     .pipe(concat('main.admin.js'))
@@ -110,3 +144,8 @@ gulp.task('default', gulp.series(
     gulp.parallel('sass', 'js', 'js-admin', 'tailwind-admin'),
     generateAssetRevisions
 ));
+
+gulp.task('watch', function () {
+  gulp.watch(['assets/js/**/*.js'], gulp.series('js', 'js-admin', generateAssetRevisions));
+  gulp.watch(['assets/sass/**/*.scss', 'private/sass/**/*.scss', 'config/tailwind.admin.config.mjs'], gulp.series('sass', 'tailwind-admin', generateAssetRevisions));
+});

@@ -1,5 +1,5 @@
 <?php
-require_once '../../lib/boot.php';
+require_once __DIR__ . '/../admin_boot.php';
 
 use Photobooth\Service\ConfigurationService;
 use Photobooth\Service\ApplicationService;
@@ -9,16 +9,6 @@ use Photobooth\Utility\FontUtility;
 use Photobooth\Utility\ImageUtility;
 use Photobooth\Utility\PathUtility;
 use Photobooth\Service\AssetService;
-
-// Login / Authentication check
-if (!(
-    !$config['login']['enabled'] ||
-    (!$config['protect']['localhost_admin'] && isset($_SERVER['SERVER_ADDR']) &&  $_SERVER['REMOTE_ADDR'] === $_SERVER['SERVER_ADDR']) ||
-    (isset($_SESSION['auth']) && $_SESSION['auth'] === true) || !$config['protect']['admin']
-)) {
-    header('location: ' . PathUtility::getPublicPath('login'));
-    exit();
-}
 
 $configurationService = ConfigurationService::getInstance();
 
@@ -236,6 +226,7 @@ $font_styles .= '</style>';
             justify-content: center;
         }
     </style>
+    <style id="fontselectedStyle"></style>
     <div class="w-full flex items-center justify-center flex-col">
         <div class="w-full max-w-[1500px] rounded-lg p-4 md:p-8 bg-white flex flex-col shadow-xl place-items-center relative">
             <div class="w-full text-center flex flex-col items-center justify-center text-2xl font-bold text-brand-1 mb-2">
@@ -259,11 +250,11 @@ $font_styles .= '</style>';
                         <?php } ?>
                         <div class="grid gap-2">
                         <div>
-                            <span class="w-full flex flex-col items-center justify-center text-2md font-bold text-brand-1 mb-2">
+                            <span class="w-full flex flex-col text-xl font-bold text-brand-1 mb-2">
                                 <?= $languageService->translate('general') ?>
                             </span>
                         </div>
-                        <div class="grid gap-2 grid-cols-[repeat(auto-fit,_minmax(150px,_1fr))]">
+                        <div class="grid gap-2 mb-4 grid-cols-[repeat(auto-fit,_minmax(150px,_1fr))]">
                             <div class="col-span-2 flex flex-col">
                                 <?=
                                     AdminInput::renderColor(
@@ -278,9 +269,8 @@ $font_styles .= '</style>';
 ?>
                             </div>
                             <div class="col-span-2 flex flex-col">
-                                <?=
-    AdminInput::renderImageSelect(
-        [
+                                <?= AdminInput::renderImageSelect(
+                                    [
             'name' => 'generator-background',
             'value' => '',
             'paths' => [
@@ -289,8 +279,8 @@ $font_styles .= '</style>';
             ],
             'attributes' => ['data-trigger' => 'general']
         ],
-        'collage:collage_background'
-    )
+                                    'collage:collage_background'
+                                )
 ?>
                             </div>
                             <div class="col-span-2 flex flex-col">
@@ -348,7 +338,7 @@ $font_styles .= '</style>';
                 'always' => 'Always',
                 'once' => 'Once',
             ],
-            'value' => 'always',
+            'value' => 'once',
             'attributes' => ['data-trigger' => 'general']
         ],
         'collage:collage_take_frame'
@@ -381,11 +371,11 @@ $font_styles .= '</style>';
                             </div>
                         </div>
                         <div>
-                            <span class="w-full flex flex-col items-center justify-center text-2md font-bold text-brand-1 mb-2">
+                            <span class="w-full flex flex-col text-xl font-bold text-brand-1 mb-2">
                                 <?= $languageService->translate('collage:generator:placeholder_settings') ?>
                             </span>
                         </div>
-                        <div class="grid gap-2 grid-cols-[repeat(auto-fit,_minmax(150px,_1fr))]">
+                        <div class="grid gap-2 mb-4 grid-cols-[repeat(auto-fit,_minmax(150px,_1fr))]">
                             <div class="col-span-2 flex flex-col">
                                 <?=
     AdminInput::renderCheckbox(
@@ -406,7 +396,11 @@ $font_styles .= '</style>';
             'name' => 'placeholder_image_position',
             'value' => '1',
             'placeholder' => 'placehoder image position',
-            'attributes' => ['data-trigger' => 'general']
+            'attributes' => [
+                'min' => '1',
+                'max' => '8',
+                'data-trigger' => 'general'
+            ]
         ],
         'collage:collage_placeholderposition'
     )
@@ -430,11 +424,11 @@ $font_styles .= '</style>';
                             </div>
                         </div>
                         <div>
-                            <span class="w-full flex flex-col items-center justify-center text-2md font-bold text-brand-1 mb-2">
+                            <span class="w-full flex flex-col text-xl font-bold text-brand-1 mb-2">
                                 <?= $languageService->translate('text_settings') ?>
                             </span>
                         </div>
-                        <div class="grid gap-2 grid-cols-[repeat(auto-fit,_minmax(150px,_1fr))]">
+                        <div class="grid gap-2 mb-4 grid-cols-[repeat(auto-fit,_minmax(150px,_1fr))]">
                             <div class="col-span-2 flex flex-col">
                                 <?=
     AdminInput::renderCheckbox(
@@ -722,7 +716,7 @@ for ($i = 0; $i < count($demoImages); $i++) {
                     <div id="collage_frame" class="absolute h-full w-full">
                         <img class="h-full w-full hidden" src="" alt="Choose the frame">
                     </div>
-                    <div id="collage_text" class="absolute h-full">
+                    <div id="collage_text" class="absolute h-full font-selected">
                         <div class='relative'>
                             <div class='absolute whitespace-nowrap origin-top-left text-line-1 leading-none'></div>
                             <div class='absolute whitespace-nowrap origin-top-left text-line-2 leading-none'></div>
