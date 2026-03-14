@@ -69,6 +69,10 @@ final class CommandsConfiguration
                 ->scalarNode('post_photo')->defaultValue($defaults['post_photo'])->end()
                 ->scalarNode('reboot')->defaultValue($defaults['reboot'])->end()
                 ->scalarNode('shutdown')->defaultValue($defaults['shutdown'])->end()
+                ->scalarNode('go2rtc_aperture')->defaultValue('')->end()
+                ->scalarNode('go2rtc_iso')->defaultValue('')->end()
+                ->scalarNode('go2rtc_aperture_key')->defaultValue('')->end()
+                ->scalarNode('go2rtc_iso_key')->defaultValue('')->end()
             ->end();
     }
 }

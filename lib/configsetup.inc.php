@@ -10,10 +10,32 @@ use Photobooth\Service\LanguageService;
 use Photobooth\Service\PrintManagerService;
 use Photobooth\Utility\PathUtility;
 
+function normalizeGo2rtcConfigKey(string $configKey): string {
+    return strtolower((string) preg_replace('/[^a-z0-9]/', '', $configKey));
+}
+
+function go2rtcConfigKeyMatchesSetting(string $configKey, string $setting): bool {
+    $normalized = normalizeGo2rtcConfigKey(basename($configKey));
+
+    if ($setting === 'aperture') {
+        return in_array($normalized, ['aperture', 'fnumber'], true);
+    }
+    if ($setting === 'iso') {
+        return in_array($normalized, ['iso'], true);
+    }
+
+    return false;
+}
+
 // Read go2rtc camera settings from /etc/go2rtc.yaml if available
 function readGo2rtcCameraSettings() {
     $go2rtcConfigFile = '/etc/go2rtc.yaml';
-    $settings = ['aperture' => '', 'iso' => ''];
+    $settings = [
+        'aperture' => '',
+        'aperture_key' => '',
+        'iso' => '',
+        'iso_key' => '',
+    ];
 
     if (file_exists($go2rtcConfigFile) && is_readable($go2rtcConfigFile)) {
         $content = file_get_contents($go2rtcConfigFile);
@@ -21,13 +43,23 @@ function readGo2rtcCameraSettings() {
 
         foreach ($lines as $line) {
             if (strpos($line, 'exec:gphoto2') !== false && strpos($line, '--capture-movie') !== false) {
-                // Extract aperture value
-                if (preg_match('/--set-config\s+aperture=(\d+)/', $line, $matches)) {
-                    $settings['aperture'] = $matches[1];
-                }
-                // Extract ISO value
-                if (preg_match('/--set-config\s+iso=(\d+)/', $line, $matches)) {
-                    $settings['iso'] = $matches[1];
+                preg_match_all('/--set-config\s+([^\s=]+)=([^\s#]+)/', $line, $matches, PREG_SET_ORDER);
+                foreach ($matches as $match) {
+                    $key = trim($match[1]);
+                    $value = trim($match[2]);
+                    if ($key === '' || $value === '') {
+                        continue;
+                    }
+
+                    if ($settings['aperture'] === '' && go2rtcConfigKeyMatchesSetting($key, 'aperture')) {
+                        $settings['aperture'] = $value;
+                        $settings['aperture_key'] = $key;
+                    }
+
+                    if ($settings['iso'] === '' && go2rtcConfigKeyMatchesSetting($key, 'iso')) {
+                        $settings['iso'] = $value;
+                        $settings['iso_key'] = $key;
+                    }
                 }
                 break;
             }
@@ -44,6 +76,12 @@ if (empty($config['commands']['go2rtc_aperture']) && !empty($go2rtcSettings['ape
 }
 if (empty($config['commands']['go2rtc_iso']) && !empty($go2rtcSettings['iso'])) {
     $config['commands']['go2rtc_iso'] = $go2rtcSettings['iso'];
+}
+if (empty($config['commands']['go2rtc_aperture_key']) && !empty($go2rtcSettings['aperture_key'])) {
+    $config['commands']['go2rtc_aperture_key'] = $go2rtcSettings['aperture_key'];
+}
+if (empty($config['commands']['go2rtc_iso_key']) && !empty($go2rtcSettings['iso_key'])) {
+    $config['commands']['go2rtc_iso_key'] = $go2rtcSettings['iso_key'];
 }
 
 /*
@@ -3882,6 +3920,8 @@ return [
             'view' => 'expert',
             'type' => 'gphoto2-select',
             'gphoto2_setting' => 'aperture',
+            'gphoto2_key_name' => 'commands[go2rtc_aperture_key]',
+            'gphoto2_key_value' => htmlentities($config['commands']['go2rtc_aperture_key'] ?? ''),
             'placeholder' => 'Select aperture or enter index manually',
             'name' => 'commands[go2rtc_aperture]',
             'value' => htmlentities($config['commands']['go2rtc_aperture'] ?? ''),
@@ -3890,6 +3930,8 @@ return [
             'view' => 'expert',
             'type' => 'gphoto2-select',
             'gphoto2_setting' => 'iso',
+            'gphoto2_key_name' => 'commands[go2rtc_iso_key]',
+            'gphoto2_key_value' => htmlentities($config['commands']['go2rtc_iso_key'] ?? ''),
             'placeholder' => 'Select ISO or enter index manually',
             'name' => 'commands[go2rtc_iso]',
             'value' => htmlentities($config['commands']['go2rtc_iso'] ?? ''),
