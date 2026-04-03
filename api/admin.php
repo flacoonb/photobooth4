@@ -171,6 +171,57 @@ if ($action === 'reset') {
     $newConfig['textonprint']['font']   = $normalizePath($newConfig['textonprint']['font'] ?? null);
     $newConfig['print']['frame']        = $normalizePath($newConfig['print']['frame'] ?? null);
 
+    $applyGo2rtcSettingsToCaptureCommand = static function (string $cmd, string $apertureKey, string $apertureValue, string $isoKey, string $isoValue): string {
+        $cmd = trim($cmd);
+        if ($cmd === '') {
+            return $cmd;
+        }
+
+        $pairs = [];
+        if ($apertureKey !== '' && $apertureValue !== '') {
+            $pairs[$apertureKey] = $apertureValue;
+        }
+        if ($isoKey !== '' && $isoValue !== '') {
+            $pairs[$isoKey] = $isoValue;
+        }
+        if ($pairs === []) {
+            return $cmd;
+        }
+
+        // Update existing --set-config key=value occurrences for the keys we manage.
+        foreach ($pairs as $key => $value) {
+            $pattern = '/(--set-config\s+)' . preg_quote($key, '/') . '=([^\s]+)/';
+            $replacement = '$1' . $key . '=' . $value;
+            $cmd = (string) preg_replace($pattern, $replacement, $cmd);
+        }
+
+        // Inject missing keys directly after the command binary (gphoto2 or capture wrapper).
+        $injectAfterBinary = null;
+        if (preg_match('/(^|\s)gphoto2(\s|$)/', $cmd)) {
+            $injectAfterBinary = 'gphoto2';
+        } elseif (preg_match('/(^|\s)capture(\s|$)/', $cmd)) {
+            $injectAfterBinary = 'capture';
+        }
+
+        if ($injectAfterBinary === null) {
+            return $cmd;
+        }
+
+        foreach ($pairs as $key => $value) {
+            if (preg_match('/--set-config\s+' . preg_quote($key, '/') . '=/i', $cmd)) {
+                continue;
+            }
+            $cmd = (string) preg_replace(
+                '/\b' . preg_quote($injectAfterBinary, '/') . '\b/',
+                $injectAfterBinary . ' --set-config ' . $key . '=' . $value,
+                $cmd,
+                1
+            );
+        }
+
+        return $cmd;
+    };
+
     $keepExistingSecret = static function (string $key, ?string $current, array $config): ?string {
         if (($current ?? '') === '' && isset($config['login'][$key])) {
             return $config['login'][$key];
@@ -373,8 +424,180 @@ if ($action === 'reset') {
     }
 
     try {
+        // Optionally apply dedicated capture camera settings (aperture/ISO) to capture commands.
+        $captureApertureValue = trim((string) ($newConfig['commands']['go2rtc_capture_aperture'] ?? ''));
+        $captureIsoValue = trim((string) ($newConfig['commands']['go2rtc_capture_iso'] ?? ''));
+        $captureApertureKey = trim((string) ($newConfig['commands']['go2rtc_capture_aperture_key'] ?? ''));
+        $captureIsoKey = trim((string) ($newConfig['commands']['go2rtc_capture_iso_key'] ?? ''));
+
+        // Backward compatibility for old admin clients that don't yet send dedicated capture fields.
+        $commandsPayload = $data['commands'] ?? null;
+        $captureFieldsProvided = is_array($commandsPayload)
+            && (
+                array_key_exists('go2rtc_capture_aperture', $commandsPayload)
+                || array_key_exists('go2rtc_capture_iso', $commandsPayload)
+                || array_key_exists('go2rtc_capture_aperture_key', $commandsPayload)
+                || array_key_exists('go2rtc_capture_iso_key', $commandsPayload)
+            );
+
+        if (!$captureFieldsProvided) {
+            $captureApertureValue = trim((string) ($newConfig['commands']['go2rtc_aperture'] ?? ''));
+            $captureIsoValue = trim((string) ($newConfig['commands']['go2rtc_iso'] ?? ''));
+            $captureApertureKey = trim((string) ($newConfig['commands']['go2rtc_aperture_key'] ?? ''));
+            $captureIsoKey = trim((string) ($newConfig['commands']['go2rtc_iso_key'] ?? ''));
+        }
+
+        if ($captureApertureKey === '' && $captureApertureValue !== '') {
+            $captureApertureKey = 'aperture';
+        }
+        if ($captureIsoKey === '' && $captureIsoValue !== '') {
+            $captureIsoKey = 'iso';
+        }
+
+        $keyPattern = '~^[a-zA-Z0-9_./:-]+$~';
+        if ($captureApertureKey !== '' && !preg_match($keyPattern, $captureApertureKey)) {
+            $logger->warning('Ignoring invalid capture aperture key format for capture commands', ['key' => $captureApertureKey]);
+            $captureApertureKey = '';
+            $captureApertureValue = '';
+        }
+        if ($captureIsoKey !== '' && !preg_match($keyPattern, $captureIsoKey)) {
+            $logger->warning('Ignoring invalid capture ISO key format for capture commands', ['key' => $captureIsoKey]);
+            $captureIsoKey = '';
+            $captureIsoValue = '';
+        }
+
+        if (!preg_match($keyPattern, $captureApertureValue) && $captureApertureValue !== '') {
+            $logger->warning('Ignoring invalid capture aperture value format for capture commands', ['value' => $captureApertureValue]);
+            $captureApertureKey = '';
+            $captureApertureValue = '';
+        }
+        if (!preg_match($keyPattern, $captureIsoValue) && $captureIsoValue !== '') {
+            $logger->warning('Ignoring invalid capture ISO value format for capture commands', ['value' => $captureIsoValue]);
+            $captureIsoKey = '';
+            $captureIsoValue = '';
+        }
+
+        if (!empty($newConfig['commands']['go2rtc_apply_to_take_picture']) && isset($newConfig['commands']['take_picture'])) {
+            $newConfig['commands']['take_picture'] = $applyGo2rtcSettingsToCaptureCommand(
+                (string) $newConfig['commands']['take_picture'],
+                $captureApertureKey,
+                $captureApertureValue,
+                $captureIsoKey,
+                $captureIsoValue
+            );
+        }
+        if (!empty($newConfig['commands']['go2rtc_apply_to_take_collage']) && isset($newConfig['commands']['take_collage'])) {
+            $newConfig['commands']['take_collage'] = $applyGo2rtcSettingsToCaptureCommand(
+                (string) $newConfig['commands']['take_collage'],
+                $captureApertureKey,
+                $captureApertureValue,
+                $captureIsoKey,
+                $captureIsoValue
+            );
+        }
+
         $configurationService->update($newConfig);
         $logger->debug('New config saved.');
+
+        // Update go2rtc.yaml if aperture or ISO config exists
+        $go2rtcConfigFile = '/etc/go2rtc.yaml';
+        if (file_exists($go2rtcConfigFile)) {
+            $logger->debug('go2rtc.yaml exists, checking if update needed', [
+                'aperture' => $newConfig['commands']['go2rtc_aperture'] ?? 'not set',
+                'iso' => $newConfig['commands']['go2rtc_iso'] ?? 'not set',
+                'aperture_key' => $newConfig['commands']['go2rtc_aperture_key'] ?? 'not set',
+                'iso_key' => $newConfig['commands']['go2rtc_iso_key'] ?? 'not set',
+                'writable' => is_writable($go2rtcConfigFile)
+            ]);
+
+            if (is_writable($go2rtcConfigFile)) {
+                try {
+                    $currentContent = file_get_contents($go2rtcConfigFile);
+                    if ($currentContent === false) {
+                        $logger->warning('Could not read go2rtc.yaml content');
+                        throw new RuntimeException('Could not read go2rtc.yaml');
+                    }
+                    $lines = explode("\n", $currentContent);
+                    $updated = false;
+
+                    foreach ($lines as $index => $line) {
+                        if (strpos($line, 'exec:gphoto2') !== false && strpos($line, '--capture-movie') !== false) {
+                            $logger->debug('Found gphoto2 line in go2rtc.yaml');
+                            $newCommand = 'gphoto2';
+
+                            if (isset($newConfig['commands']['go2rtc_aperture']) && $newConfig['commands']['go2rtc_aperture'] !== '') {
+                                $apertureValue = trim((string) $newConfig['commands']['go2rtc_aperture']);
+                                $apertureKey = trim((string) ($newConfig['commands']['go2rtc_aperture_key'] ?? ''));
+                                if ($apertureKey === '') {
+                                    $apertureKey = 'aperture';
+                                }
+
+                                if (!preg_match('~^[a-zA-Z0-9_./:-]+$~', $apertureKey)) {
+                                    $logger->warning('Skipping go2rtc aperture update due to invalid key format', ['key' => $apertureKey]);
+                                } elseif (!preg_match('~^[a-zA-Z0-9_./:-]+$~', $apertureValue)) {
+                                    $logger->warning('Skipping go2rtc aperture update due to invalid value format', ['value' => $apertureValue]);
+                                } else {
+                                    $newCommand .= ' --set-config ' . $apertureKey . '=' . $apertureValue;
+                                    $logger->debug('Adding ' . $apertureKey . '=' . $apertureValue);
+                                }
+                            }
+
+                            if (isset($newConfig['commands']['go2rtc_iso']) && $newConfig['commands']['go2rtc_iso'] !== '') {
+                                $isoValue = trim((string) $newConfig['commands']['go2rtc_iso']);
+                                $isoKey = trim((string) ($newConfig['commands']['go2rtc_iso_key'] ?? ''));
+                                if ($isoKey === '') {
+                                    $isoKey = 'iso';
+                                }
+
+                                if (!preg_match('~^[a-zA-Z0-9_./:-]+$~', $isoKey)) {
+                                    $logger->warning('Skipping go2rtc ISO update due to invalid key format', ['key' => $isoKey]);
+                                } elseif (!preg_match('~^[a-zA-Z0-9_./:-]+$~', $isoValue)) {
+                                    $logger->warning('Skipping go2rtc ISO update due to invalid value format', ['value' => $isoValue]);
+                                } else {
+                                    $newCommand .= ' --set-config ' . $isoKey . '=' . $isoValue;
+                                    $logger->debug('Adding ' . $isoKey . '=' . $isoValue);
+                                }
+                            }
+
+                            $newCommand .= ' --capture-movie --stdout';
+
+                            if (preg_match('/^(\s+)/', $line, $indent)) {
+                                $spacing = $indent[1];
+                            } else {
+                                $spacing = '  ';
+                            }
+
+                            $lines[$index] = $spacing . 'photobooth: exec:' . $newCommand . '#killsignal=2';
+                            $logger->debug('New gphoto2 command: ' . $newCommand);
+                            $updated = true;
+                            break;
+                        }
+                    }
+
+                    if ($updated) {
+                        $newContent = implode("\n", $lines);
+                        if (file_put_contents($go2rtcConfigFile, $newContent) !== false) {
+                            $logger->info('go2rtc.yaml updated with new camera settings');
+
+                            // Restart go2rtc service in background to avoid blocking the response
+                            exec('sudo systemctl restart go2rtc.service > /dev/null 2>&1 &');
+                            $logger->info('go2rtc service restart initiated');
+                        } else {
+                            $logger->error('Failed to write go2rtc.yaml file');
+                        }
+                    } else {
+                        $logger->debug('No gphoto2 line found in go2rtc.yaml to update');
+                    }
+                } catch (\Exception $e) {
+                    $logger->error('Failed to update go2rtc.yaml: ' . $e->getMessage());
+                }
+            } else {
+                $logger->warning('go2rtc.yaml is not writable. Run: sudo chmod 666 /etc/go2rtc.yaml');
+            }
+        } else {
+            $logger->debug('go2rtc.yaml does not exist, skipping camera settings update');
+        }
+
         echo json_encode([
             'status' => 'success',
             'message' => 'New config saved.',

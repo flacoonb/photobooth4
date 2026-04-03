@@ -69,6 +69,16 @@ final class CommandsConfiguration
                 ->scalarNode('post_photo')->defaultValue($defaults['post_photo'])->end()
                 ->scalarNode('reboot')->defaultValue($defaults['reboot'])->end()
                 ->scalarNode('shutdown')->defaultValue($defaults['shutdown'])->end()
+                ->scalarNode('go2rtc_aperture')->defaultValue('')->end()
+                ->scalarNode('go2rtc_iso')->defaultValue('')->end()
+                ->scalarNode('go2rtc_aperture_key')->defaultValue('')->end()
+                ->scalarNode('go2rtc_iso_key')->defaultValue('')->end()
+                ->scalarNode('go2rtc_capture_aperture')->defaultValue('')->end()
+                ->scalarNode('go2rtc_capture_iso')->defaultValue('')->end()
+                ->scalarNode('go2rtc_capture_aperture_key')->defaultValue('')->end()
+                ->scalarNode('go2rtc_capture_iso_key')->defaultValue('')->end()
+                ->booleanNode('go2rtc_apply_to_take_picture')->defaultValue(false)->end()
+                ->booleanNode('go2rtc_apply_to_take_collage')->defaultValue(false)->end()
             ->end();
     }
 }

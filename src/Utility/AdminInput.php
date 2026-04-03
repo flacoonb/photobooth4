@@ -734,6 +734,121 @@ class AdminInput
         return $html;
     }
 
+    public static function renderGphoto2Select(array $setting, string $label): string
+    {
+        $languageService = LanguageService::getInstance();
+
+        $className = 'w-full h-10 border-2 border-solid border-gray-300 focus:border-brand-1 rounded-md px-2 mt-auto';
+        $attributes = self::buildAttributes($setting);
+
+        $gphoto2Setting = (string) ($setting['gphoto2_setting'] ?? '');
+        $gphoto2KeyName = (string) ($setting['gphoto2_key_name'] ?? '');
+        $gphoto2KeyValue = (string) ($setting['gphoto2_key_value'] ?? '');
+        $containerId = 'gphoto2-select-' . substr(md5($setting['name'] . $gphoto2Setting), 0, 8);
+        $loadingText = $languageService->translate('loading');
+        $errorText = $languageService->translate('error');
+        $optionsText = $languageService->translate('options');
+        $currentLabel = $languageService->translate('current');
+        $resolvedKeyText = 'Resolved key';
+        $loadingTextJs = json_encode($loadingText);
+        $errorTextJs = json_encode($errorText);
+        $optionsTextJs = json_encode($optionsText);
+        $currentLabelJs = json_encode($currentLabel);
+        $resolvedKeyTextJs = json_encode($resolvedKeyText);
+
+        return self::renderHeadline($label) . '
+            <div id="' . htmlspecialchars($containerId, ENT_QUOTES) . '" class="gphoto2-select-container">
+                <select
+                    class="' . $className . ' gphoto2-select"
+                    name="' . htmlspecialchars((string) $setting['name'], ENT_QUOTES) . '"
+                    data-gphoto2-setting="' . htmlspecialchars($gphoto2Setting, ENT_QUOTES) . '"
+                    data-current-value="' . htmlspecialchars((string) $setting['value'], ENT_QUOTES) . '"
+                    ' . $attributes . '
+                >
+                    <option value="' . htmlspecialchars((string) $setting['value'], ENT_QUOTES) . '" selected>' . ($setting['value'] !== '' ? htmlspecialchars((string) $setting['value'], ENT_QUOTES) : htmlspecialchars($loadingText . '...', ENT_QUOTES)) . '</option>
+                </select>
+                ' . ($gphoto2KeyName !== ''
+                    ? '<input type="hidden" class="gphoto2-select-key" name="' . htmlspecialchars($gphoto2KeyName, ENT_QUOTES) . '" value="' . htmlspecialchars($gphoto2KeyValue, ENT_QUOTES) . '" data-fallback-key="' . htmlspecialchars($gphoto2Setting, ENT_QUOTES) . '"/>'
+                    : '') . '
+                <div class="gphoto2-select-status text-xs mt-1 text-gray-500"></div>
+            </div>
+            <script>
+            (function() {
+                const root = document.getElementById("' . htmlspecialchars($containerId, ENT_QUOTES) . '");
+                if (!root) {
+                    return;
+                }
+
+                const select = root.querySelector("select.gphoto2-select");
+                const statusDiv = root.querySelector(".gphoto2-select-status");
+                const keyInput = root.querySelector(".gphoto2-select-key");
+                if (!select || !statusDiv) {
+                    return;
+                }
+                const gphoto2Setting = select.dataset.gphoto2Setting;
+                const currentValue = select.dataset.currentValue;
+
+                if (!gphoto2Setting) {
+                    statusDiv.textContent = "Error: No gphoto2 setting specified";
+                    statusDiv.className = "gphoto2-select-status text-xs mt-1 text-red-500";
+                    return;
+                }
+
+                statusDiv.textContent = ' . $loadingTextJs . ' + "...";
+
+                fetch("/api/getGphoto2Config.php?setting=" + encodeURIComponent(gphoto2Setting), { cache: "no-store" })
+                    .then(response => response.json().catch(() => ({
+                        success: false,
+                        error: "Invalid JSON response"
+                    })))
+                    .then(data => {
+                        if (!data.success || !Array.isArray(data.choices)) {
+                            throw new Error(data.error || "Unknown error");
+                        }
+
+                        select.innerHTML = "";
+                        let hasSelection = false;
+                        const normalizedCurrentValue = String(currentValue || "");
+
+                        data.choices.forEach(choice => {
+                            const option = document.createElement("option");
+                            option.value = String(choice.index);
+                            option.textContent = String(choice.value);
+                            if (String(choice.index) === normalizedCurrentValue || String(choice.value) === normalizedCurrentValue) {
+                                option.selected = true;
+                                hasSelection = true;
+                            }
+                            select.appendChild(option);
+                        });
+
+                        if (!hasSelection && normalizedCurrentValue !== "") {
+                            const fallbackOption = document.createElement("option");
+                            fallbackOption.value = normalizedCurrentValue;
+                            fallbackOption.textContent = normalizedCurrentValue + " (saved)";
+                            fallbackOption.selected = true;
+                            select.appendChild(fallbackOption);
+                        }
+
+                        if (keyInput) {
+                            keyInput.value = data.resolvedKey || keyInput.dataset.fallbackKey || gphoto2Setting;
+                        }
+
+                        const currentText = data.current ? " (" + ' . $currentLabelJs . ' + ": " + data.current + ")" : "";
+                        const resolvedKeyText = data.resolvedKey ? " | " + ' . $resolvedKeyTextJs . ' + ": " + data.resolvedKey : "";
+                        statusDiv.textContent = data.choices.length + " " + ' . $optionsTextJs . ' + currentText + resolvedKeyText;
+                        statusDiv.className = "gphoto2-select-status text-xs mt-1 text-green-600";
+                    })
+                    .catch(error => {
+                        if (keyInput && !keyInput.value) {
+                            keyInput.value = keyInput.dataset.fallbackKey || gphoto2Setting;
+                        }
+                        statusDiv.textContent = ' . $errorTextJs . ' + ": " + error.message;
+                        statusDiv.className = "gphoto2-select-status text-xs mt-1 text-red-500";
+                    });
+            })();
+            </script>
+        ';
+    }
     public static function renderToggleButtonGroupModal(array $setting, string $label): string
     {
         $languageService = LanguageService::getInstance();
@@ -910,6 +1025,7 @@ class AdminInput
             </script>
         ';
     }
+
     public static function renderToggleButtonGroup(array $setting, string $label): string
     {
         $settingName = $setting['name'];
