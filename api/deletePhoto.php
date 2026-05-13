@@ -79,12 +79,24 @@ foreach ($filesToDelete as $fileName) {
         $database->deleteContentFromDB($fileName);
     }
 
+    // Best-effort remote delete: the local file is already gone at this
+    // point, so a failure to reach the remote server must not turn into a
+    // user-visible delete failure. Log it and continue; the remote file can
+    // be cleaned up manually or via a future cleanup pass.
     if ($config['ftp']['enabled'] && $config['ftp']['delete']) {
-        $remoteStorage = RemoteStorageService::getInstance();
-        $uploadQueue = UploadQueueService::getInstance();
-        $remoteFilename = $uploadQueue->getRemoteFilename($fileName) ?? $fileName;
-        $remoteStorage->delete('images/' . $remoteFilename);
-        $remoteStorage->delete('thumbs/' . $remoteFilename);
+        try {
+            $remoteStorage = RemoteStorageService::getInstance();
+            $uploadQueue = UploadQueueService::getInstance();
+            $remoteFilename = $uploadQueue->getRemoteFilename($fileName) ?? $fileName;
+            $remoteStorage->delete('images/' . $remoteFilename);
+            $remoteStorage->delete('thumbs/' . $remoteFilename);
+        } catch (\Throwable $remoteError) {
+            $logger->error('Remote delete failed (local already removed)', [
+                'file' => $fileName,
+                'error' => $remoteError->getMessage(),
+                'exception' => get_class($remoteError),
+            ]);
+        }
     }
 }
 

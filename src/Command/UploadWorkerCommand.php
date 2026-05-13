@@ -38,20 +38,55 @@ class UploadWorkerCommand extends Command
         $output->writeln('Upload worker started.');
         $logger->info('Upload worker started');
 
-        // Reset any stale in_progress jobs from previous crashed runs
+        // Reset any stale in_progress jobs from previous crashed runs.
         $queue->resetStaleJobs();
+
+        // Best-effort cleanup of long-completed entries so the SQLite DB
+        // does not grow unbounded over weeks of operation.
+        try {
+            $queue->purgeCompleted(7 * 24 * 60);
+        } catch (\Throwable $purgeError) {
+            $logger->warning('Queue purge failed', ['error' => $purgeError->getMessage()]);
+        }
+
+        // Graceful shutdown via SIGTERM/SIGINT so systemd restarts and
+        // Ctrl+C don't leave a job stuck in_progress. Falls back silently
+        // if pcntl isn't available (non-CLI SAPI or compile-time omission).
+        $shouldStop = false;
+        if (function_exists('pcntl_signal') && function_exists('pcntl_async_signals')) {
+            pcntl_async_signals(true);
+            $stopHandler = function (int $signo) use (&$shouldStop, $logger, $output): void {
+                $logger->info('Upload worker received shutdown signal', ['signal' => $signo]);
+                $output->writeln('Shutdown signal received, finishing current job and exiting.');
+                $shouldStop = true;
+            };
+            pcntl_signal(SIGTERM, $stopHandler);
+            pcntl_signal(SIGINT, $stopHandler);
+            pcntl_signal(SIGHUP, $stopHandler);
+        }
 
         $setupDone = false;
         $lastConfigHash = '';
+        $purgeCounter = 0;
 
-        while (true) {
-            $job = $queue->fetchNext();
+        while (!$shouldStop) {
+            $job = $queue->claimNext();
 
             if ($job === null) {
                 if ($once) {
                     $output->writeln('No pending jobs, exiting.');
 
                     return Command::SUCCESS;
+                }
+                // Occasional cleanup pass during idle ticks (every ~5 min
+                // assuming default 5s poll interval).
+                if (++$purgeCounter >= 60) {
+                    $purgeCounter = 0;
+                    try {
+                        $queue->purgeCompleted(7 * 24 * 60);
+                    } catch (\Throwable $purgeError) {
+                        $logger->warning('Queue purge failed', ['error' => $purgeError->getMessage()]);
+                    }
                 }
                 sleep($pollInterval);
                 continue;
@@ -65,11 +100,9 @@ class UploadWorkerCommand extends Command
             $output->writeln('Processing job #' . $jobId . ': ' . $imageFile . ' -> ' . $remoteFilename);
             $logger->info('Processing upload job', ['id' => $jobId, 'image' => $imageFile, 'remote' => $remoteFilename]);
 
-            $queue->markInProgress($jobId);
-
             try {
                 // Reload config from disk and create fresh RemoteStorageService per job
-                // to pick up any admin panel config changes while worker is running
+                // to pick up any admin panel config changes while worker is running.
                 ConfigurationService::getInstance()->load();
                 $configHash = md5(serialize(ConfigurationService::getInstance()->getConfiguration()['ftp']));
                 if ($configHash !== $lastConfigHash) {
@@ -79,7 +112,7 @@ class UploadWorkerCommand extends Command
 
                 $remoteStorage = new RemoteStorageService();
 
-                // Setup remote directories and webpage once, retry on failure
+                // Setup remote directories and webpage once per config version.
                 if (!$setupDone) {
                     $remoteStorage->ensureDirectoriesExist();
                     $remoteStorage->createWebpage();
@@ -113,14 +146,28 @@ class UploadWorkerCommand extends Command
                 $output->writeln('Job #' . $jobId . ' completed successfully.');
             } catch (\Throwable $e) {
                 $setupDone = false;
-                $queue->markFailed($jobId, $e->getMessage());
+                try {
+                    $queue->markFailed($jobId, $e->getMessage());
+                } catch (\Throwable $persistError) {
+                    $logger->error('Could not persist failure status', [
+                        'id' => $jobId,
+                        'error' => $persistError->getMessage(),
+                    ]);
+                }
                 $output->writeln('Job #' . $jobId . ' failed: ' . $e->getMessage());
-                $logger->error('Upload job failed', ['id' => $jobId, 'error' => $e->getMessage()]);
+                $logger->error('Upload job failed', [
+                    'id' => $jobId,
+                    'error' => $e->getMessage(),
+                    'exception' => get_class($e),
+                ]);
             }
 
             if ($once) {
                 return Command::SUCCESS;
             }
         }
+
+        $logger->info('Upload worker exiting cleanly');
+        return Command::SUCCESS;
     }
 }

@@ -5,6 +5,7 @@
 require_once __DIR__ . '/../admin/admin_boot.php';
 
 use Photobooth\Service\PrintManagerService;
+use Photobooth\Service\UploadQueueService;
 use Photobooth\Utility\PathUtility;
 
 header('Content-Type: application/json');
@@ -22,6 +23,8 @@ function handleDebugPanel(string $content, array $config): string|false
             return readFileContents(PathUtility::getAbsolutePath('var/log/remotestorage.log'));
         case 'nav-uploadworkerlog':
             return readFileContents(PathUtility::getAbsolutePath('var/log/uploadworker.log'));
+        case 'nav-uploadqueuestatus':
+            return renderUploadQueueStatus();
         case 'nav-rembglog':
             return readFileContents(PathUtility::getAbsolutePath('var/log/rembg.log'));
         case 'nav-myconfig':
@@ -198,6 +201,72 @@ function generateTableHtml(array $columns, array $result): string
     $html .= '    </tbody>' . "\r\n";
     $html .= '</table>' . "\r\n";
     return $html;
+}
+
+function renderUploadQueueStatus(): string
+{
+    try {
+        $queue = UploadQueueService::getInstance();
+        $rows = $queue->getStatus();
+    } catch (\Throwable $e) {
+        return 'INFO: Upload queue not available: ' . $e->getMessage();
+    }
+
+    if (empty($rows)) {
+        return 'Queue is empty.';
+    }
+
+    $counts = [
+        'pending' => 0,
+        'in_progress' => 0,
+        'completed' => 0,
+        'failed' => 0,
+    ];
+    foreach ($rows as $r) {
+        $status = (string) $r['status'];
+        if (isset($counts[$status])) {
+            $counts[$status]++;
+        }
+    }
+
+    $out = sprintf(
+        "Pending: %d   In progress: %d   Completed: %d   Failed: %d\r\n%s\r\n",
+        $counts['pending'],
+        $counts['in_progress'],
+        $counts['completed'],
+        $counts['failed'],
+        str_repeat('-', 60)
+    );
+
+    // Show recent failures + still-pending jobs (most useful for diagnosis).
+    // Skip completed jobs from the list itself to keep output readable —
+    // the counter above already captures them.
+    $shown = 0;
+    foreach ($rows as $r) {
+        if ($r['status'] === 'completed') {
+            continue;
+        }
+        $out .= sprintf(
+            "#%d  [%s]  retries=%d  %s\r\n",
+            (int) $r['id'],
+            str_pad((string) $r['status'], 11),
+            (int) $r['retries'],
+            (string) $r['image_file']
+        );
+        if (!empty($r['error_message'])) {
+            $error = preg_replace('/\s+/', ' ', (string) $r['error_message']) ?? '';
+            if (strlen($error) > 200) {
+                $error = substr($error, 0, 197) . '...';
+            }
+            $out .= '    error: ' . $error . "\r\n";
+        }
+        if (++$shown >= 50) {
+            $out .= sprintf("(showing first 50 non-completed of %d total)\r\n", count($rows));
+            break;
+        }
+    }
+
+    return $out;
 }
 
 function maskedConfig(array $config): array

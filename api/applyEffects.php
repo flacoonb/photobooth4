@@ -337,14 +337,29 @@ try {
             }
         }
 
-        // Queue images for async remote storage upload
+        // Queue images for async remote storage upload.
+        // The image is already safely written locally at this point — a queue
+        // failure (SQLite locked, disk full, missing var/run permissions) must
+        // not break the user-visible photo flow. We log it and continue so the
+        // user gets their photo back; the remote upload can be retried later
+        // or recovered manually from the local image.
         if ($config['ftp']['enabled']) {
-            $uploadQueue = UploadQueueService::getInstance();
-            $uploadQueue->enqueue(
-                $vars['singleImageFile'],
-                $vars['singleImageFile'],
-                (bool) $config['ftp']['create_webpage']
-            );
+            try {
+                $uploadQueue = UploadQueueService::getInstance();
+                $uploadQueue->enqueue(
+                    $vars['singleImageFile'],
+                    $vars['singleImageFile'],
+                    (bool) $config['ftp']['create_webpage']
+                );
+            } catch (\Throwable $queueError) {
+                $logger = LoggerService::getInstance()->getLogger('uploadqueue');
+                $logger->error('Failed to enqueue remote upload', [
+                    'image' => $vars['singleImageFile'],
+                    'error' => $queueError->getMessage(),
+                    'exception' => get_class($queueError),
+                ]);
+                $imageHandler->addErrorData('Warning: Failed to enqueue remote upload (image saved locally).');
+            }
         }
 
         // Change permissions

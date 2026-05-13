@@ -1113,6 +1113,7 @@
   "upload_unable_to_write_folder": "Unable to upload the file to the folder. Enable write access!",
   "upload_wrong_type": "The file is not in the correct type list",
   "uploading": "Uploading...",
+  "uploadqueuestatus": "FTP Upload Queue Status",
   "uploadworkerlog": "FTP Upload Worker Log",
   "userinterface": "User interface",
   "userinterface:background_admin": "Admin panel background image path",

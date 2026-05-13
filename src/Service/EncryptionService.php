@@ -51,7 +51,21 @@ class EncryptionService
 
     public function isEncrypted(string $value): bool
     {
-        return str_starts_with($value, 'enc:');
+        // The 'enc:' prefix is a hint, not proof — a plaintext password that
+        // legitimately starts with "enc:" must still get encrypted, otherwise
+        // it would land in storage as plaintext. We therefore additionally
+        // require that the suffix is valid base64 of at least the minimum
+        // ciphertext length (nonce + Poly1305 MAC) before treating it as
+        // already-encrypted.
+        if (!str_starts_with($value, 'enc:')) {
+            return false;
+        }
+        $decoded = base64_decode(substr($value, 4), true);
+        if ($decoded === false) {
+            return false;
+        }
+        // SODIUM_CRYPTO_SECRETBOX_MACBYTES = 16, NONCEBYTES = 24.
+        return strlen($decoded) >= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES + SODIUM_CRYPTO_SECRETBOX_MACBYTES;
     }
 
     protected function loadOrCreateKey(): string
@@ -68,10 +82,23 @@ class EncryptionService
         $key = sodium_crypto_secretbox_keygen();
         $dir = dirname($keyPath);
         if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
+            // 0750 (was 0755): drop world-execute so anonymous local users
+            // cannot stat the key file's existence. Group bit kept for
+            // multi-user dev setups where the webserver group needs read
+            // access to other var/run files (pid files, login throttle).
+            mkdir($dir, 0750, true);
         }
-        file_put_contents($keyPath, $key);
-        chmod($keyPath, 0600);
+        // Write atomically — temp file + rename — so a concurrent first-run
+        // race cannot produce a half-written key file.
+        $tmp = $keyPath . '.tmp.' . bin2hex(random_bytes(4));
+        if (file_put_contents($tmp, $key) === false) {
+            throw new \RuntimeException('Failed to write encryption key file');
+        }
+        chmod($tmp, 0600);
+        if (!rename($tmp, $keyPath)) {
+            @unlink($tmp);
+            throw new \RuntimeException('Failed to finalize encryption key file');
+        }
 
         return $key;
     }

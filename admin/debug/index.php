@@ -52,6 +52,7 @@ echo getNavItemDebug('remotebuzzerlog');
 echo getNavItemDebug('synctodrivelog');
 echo getNavItemDebug('remotestoragelog');
 echo getNavItemDebug('uploadworkerlog');
+echo getNavItemDebug('uploadqueuestatus');
 echo getNavItemDebug('rembglog');
 echo getNavItemDebug('devlog');
 if (Environment::isLinux()) {

@@ -152,16 +152,37 @@ if (!file_exists($vars['printFile'])) {
         }
 
         if ($config['print']['qrcode']) {
+            // Mirror the qrcode.php logic: only point at the remote gallery
+            // when the image actually has a queue mapping — otherwise the
+            // printed QR would 404 because no remote file exists under the
+            // local filename.
             $url = $config['qr']['url'];
+            $printQrUsesRemote = false;
             if ($config['ftp']['enabled'] && $config['ftp']['useForQr']) {
-                $remoteStorageService = RemoteStorageService::getInstance();
-                $url = $remoteStorageService->getWebpageUri();
-                if ($config['qr']['append_filename']) {
+                try {
                     $uploadQueue = UploadQueueService::getInstance();
-                    $remoteFilename = $uploadQueue->getRemoteFilename($vars['fileName']) ?? $vars['fileName'];
-                    $url .= '/?img=' . rawurlencode($remoteFilename);
+                    $mapped = $uploadQueue->getRemoteFilename($vars['fileName']);
+                    if ($mapped !== null && $mapped !== '') {
+                        $remoteStorageService = RemoteStorageService::getInstance();
+                        $url = $remoteStorageService->getWebpageUri();
+                        $printQrUsesRemote = true;
+                        if ($config['qr']['append_filename']) {
+                            $url .= '/?img=' . rawurlencode($mapped);
+                        }
+                    } else {
+                        LoggerService::getInstance()->getLogger('uploadqueue')->warning(
+                            'Print QR falling back to local URL — no remote mapping',
+                            ['image' => $vars['fileName']]
+                        );
+                    }
+                } catch (\Throwable $queueError) {
+                    LoggerService::getInstance()->getLogger('uploadqueue')->error(
+                        'Upload queue unavailable for print QR; falling back to local URL',
+                        ['image' => $vars['fileName'], 'error' => $queueError->getMessage()]
+                    );
                 }
-            } elseif ($config['qr']['append_filename']) {
+            }
+            if (!$printQrUsesRemote && $config['qr']['append_filename']) {
                 $url .= $vars['fileName'];
             }
             $imageHandler->qrUrl = PathUtility::getPublicPath($url, true);

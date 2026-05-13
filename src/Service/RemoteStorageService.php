@@ -33,7 +33,21 @@ class RemoteStorageService
     {
         $templateLocation = PathUtility::getAbsolutePath($this->config['template_location']);
         if (!file_exists($templateLocation)) {
+            $this->logger->warning('Webpage template not found; skipping createWebpage', [
+                'template' => $templateLocation,
+            ]);
             return;
+        }
+
+        // Read the template up-front so we can fail before touching the
+        // remote — writing an empty index.php (the result of casting false
+        // to string) would silently brick the remote gallery.
+        $templateContents = file_get_contents($templateLocation);
+        if ($templateContents === false || $templateContents === '') {
+            $this->logger->error('Failed to read webpage template; aborting createWebpage', [
+                'template' => $templateLocation,
+            ]);
+            throw new \RuntimeException('Webpage template is unreadable or empty: ' . $templateLocation);
         }
 
         $config = ConfigurationService::getInstance()->getConfiguration();
@@ -69,18 +83,45 @@ class RemoteStorageService
             ],
         ];
 
+        $configFile = "<?php\n\nreturn " . ArrayUtility::export($parameters) . ";\n";
+        $indexGuard = "<?php header('Location: ../'); exit;\n";
+
+        // Idempotency: skip re-uploading the webpage scaffolding when neither
+        // the rendered config nor the template have changed since the last
+        // successful upload. The hash file is local — the worker's setupDone
+        // flag normally prevents per-job re-uploads, but on worker restarts
+        // or config-hash changes that don't actually alter the rendered
+        // output (e.g. unrelated FTP option toggles) this still saved a
+        // 5-10kB FTP round-trip.
+        $stateHash = hash('xxh3', $configFile . "\n--\n" . $templateContents . "\n--\n" . $indexGuard);
+        $hashFile = PathUtility::getAbsolutePath('var/run/upload_webpage_hash');
+        $previousHash = is_file($hashFile) ? (string) file_get_contents($hashFile) : '';
+        if ($previousHash === $stateHash) {
+            $this->logger->debug('Webpage scaffolding unchanged, skipping upload', ['hash' => $stateHash]);
+            return;
+        }
+
         // Always update config and template
-        $this->write($this->getStoragePath('config.inc.php'), "<?php\n\nreturn " . ArrayUtility::export($parameters) . ";\n");
-        $this->write($this->getStoragePath('index.php'), (string) file_get_contents($templateLocation));
+        $this->write($this->getStoragePath('config.inc.php'), $configFile);
+        $this->write($this->getStoragePath('index.php'), $templateContents);
 
         // Remove legacy .htaccess files that cause 403 on hosts without AllowOverride Options
         $this->delete($this->getStoragePath('images/.htaccess'));
         $this->delete($this->getStoragePath('thumbs/.htaccess'));
 
         // Prevent directory listing without relying on AllowOverride Options
-        $indexGuard = "<?php header('Location: ../'); exit;\n";
         $this->write($this->getStoragePath('images/index.php'), $indexGuard);
         $this->write($this->getStoragePath('thumbs/index.php'), $indexGuard);
+
+        // Persist the new hash atomically only after all uploads succeeded —
+        // if any write above threw, we want the next run to retry the full
+        // scaffolding rather than think it is current.
+        $hashTmp = $hashFile . '.tmp.' . bin2hex(random_bytes(4));
+        if (file_put_contents($hashTmp, $stateHash) !== false) {
+            if (!@rename($hashTmp, $hashFile)) {
+                @unlink($hashTmp);
+            }
+        }
     }
 
     public function getWebpageUri(): string
@@ -139,12 +180,16 @@ class RemoteStorageService
     {
         $this->logger->info('Testing upload connection.');
         try {
-            $files = [];
-            $contents = $this->filesystem->listContents('/', false);
-            foreach ($contents as $object) {
-                $files[] = $object->path();
+            // Iterate but don't keep file paths around — listing user files
+            // at info level is unnecessary information disclosure in logs
+            // that may be shipped off-box. Paths still go to debug-level
+            // logs when troubleshooting is needed.
+            $count = 0;
+            foreach ($this->filesystem->listContents('/', false) as $object) {
+                $count++;
+                $this->logger->debug('Connection probe entry', ['path' => $object->path()]);
             }
-            $this->logger->info('Connection established.', [$files]);
+            $this->logger->info('Connection established.', ['entries' => $count]);
         } catch (\Throwable $exception) {
             $this->logger->error('Connection failed.', ['exception' => $exception->getMessage()]);
 
@@ -174,6 +219,10 @@ class RemoteStorageService
         $host = $ip !== $config['baseURL'] ? $ip : $config['baseURL'];
         $type = RemoteStorageTypeEnum::from($config['type']);
 
+        // Short timeout for admin-side operations (test connection, folder
+        // browser) so the admin UI does not hang for 90s if the server is
+        // unreachable. The default Flysystem-FTP timeout is 90s, way too
+        // long for an interactive test.
         $adapter = match ($type) {
             RemoteStorageTypeEnum::FTP => new FtpAdapter(
                 FtpConnectionOptions::fromArray([
@@ -182,6 +231,7 @@ class RemoteStorageService
                     'username' => $config['username'],
                     'password' => $config['password'],
                     'port' => (int) $config['port'],
+                    'timeout' => 10,
                 ])
             ),
             RemoteStorageTypeEnum::SFTP => new SftpAdapter(
@@ -190,6 +240,7 @@ class RemoteStorageService
                     'username' => $config['username'],
                     'password' => $config['password'],
                     'port' => (int) $config['port'],
+                    'timeout' => 10,
                 ]),
                 $root,
                 PortableVisibilityConverter::fromArray([
@@ -247,6 +298,10 @@ class RemoteStorageService
 
     protected function getAdapterForFtp(array $config): FtpAdapter
     {
+        // 30s covers reasonable transfer time for a multi-MB JPEG over a
+        // typical residential uplink while still bounding a hung connection.
+        // The Flysystem default of 90s is too generous for an event-driven
+        // worker — a stuck connection should fail fast and retry.
         return new FtpAdapter(
             FtpConnectionOptions::fromArray([
                 'host' => $this->resolveHostToIPv4($config['baseURL']),
@@ -254,6 +309,7 @@ class RemoteStorageService
                 'username' => $config['username'],
                 'password' => $config['password'],
                 'port' => $config['port'],
+                'timeout' => 30,
             ])
         );
     }
@@ -265,7 +321,10 @@ class RemoteStorageService
                 'host' => $this->resolveHostToIPv4($config['baseURL']),
                 'username' => $config['username'],
                 'password' => $config['password'],
-                'port' => $config['port']
+                'port' => $config['port'],
+                // SFTP handshake (key exchange + auth) should complete in
+                // under 15s on any reasonable connection. Default is 10s.
+                'timeout' => 15,
             ]),
             '/' . $config['baseFolder'],
             PortableVisibilityConverter::fromArray([

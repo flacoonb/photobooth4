@@ -87,6 +87,7 @@ class DebugPanel {
                 ) {
                     this.adminContent.scrollTo(0, this.adminContent.scrollHeight);
                 } else {
+                    // Status panels (incl. uploadqueuestatus) read top-down.
                     this.adminContent.scrollTo(0, 0);
                 }
             })

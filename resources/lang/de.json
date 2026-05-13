@@ -1110,6 +1110,8 @@
   "upload_unable_to_write_folder": "Die Datei konnte nicht in den Ordner hochgeladen werden. Aktivieren Sie Schreibzugriff!",
   "upload_wrong_type": "Die Datei ist nicht in der richtigen Typenliste",
   "uploading": "Wird hochgeladen...",
+  "uploadqueuestatus": "FTP-Upload-Warteschlange",
+  "uploadworkerlog": "FTP-Upload-Worker-Log",
   "userinterface": "Benutzeroberfläche",
   "userinterface:background_admin": "Pfad zum Hintergrundbild im Admin Panel",
   "userinterface:background_chroma": "Pfad zum Hintergrundbild im Chroma-Keying Panel",
