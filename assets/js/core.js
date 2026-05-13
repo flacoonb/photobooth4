@@ -669,18 +669,113 @@ const photoBooth = (function () {
         }, retryTimeout);
     };
 
+    api.waitForCaptureJob = (jobId, timeoutMs = 130000) => {
+        return new Promise((resolve, reject) => {
+            const startedAt = Date.now();
+            let interval = 150;
+            const maxInterval = 800;
+
+            const poll = () => {
+                photoboothTools
+                    .ajaxWithCsrf({
+                        url: environment.publicFolders.api + '/captureStatus.php',
+                        method: 'POST',
+                        data: { job_id: jobId },
+                        timeout: 5000
+                    })
+                    .done((job) => {
+                        if (job && job.status === 'done' && job.result) {
+                            resolve(job.result);
+                            return;
+                        }
+
+                        if (job && job.status === 'failed') {
+                            reject({ error: job.error || 'Capture failed' });
+                            return;
+                        }
+
+                        if (job && typeof job.error === 'string' && job.error !== '') {
+                            reject({ error: job.error });
+                            return;
+                        }
+
+                        if (
+                            job &&
+                            typeof job.status === 'string' &&
+                            !['queued', 'running', 'done', 'failed'].includes(job.status)
+                        ) {
+                            reject({ error: 'Unexpected capture job status: ' + job.status });
+                            return;
+                        }
+
+                        if (Date.now() - startedAt > timeoutMs) {
+                            reject({ error: 'Capture timed out' });
+                            return;
+                        }
+
+                        setTimeout(poll, interval);
+                        interval = Math.min(Math.round(interval * 1.3), maxInterval);
+                    })
+                    .fail((xhr, status, error) => {
+                        if (photoboothTools.isCsrfErrorResponse(xhr)) {
+                            photoboothTools.handleCsrfMismatch(environment.publicFolders.api + '/captureStatus.php');
+                            reject({ error: 'CSRF token mismatch' });
+                            return;
+                        }
+                        const responseError =
+                            xhr &&
+                            xhr.responseJSON &&
+                            typeof xhr.responseJSON.error === 'string' &&
+                            xhr.responseJSON.error !== ''
+                                ? xhr.responseJSON.error
+                                : '';
+                        if (responseError) {
+                            reject({ error: responseError });
+                            return;
+                        }
+                        if (xhr && typeof xhr.status === 'number' && xhr.status >= 400 && xhr.status < 500) {
+                            reject({ error: error || status || 'Capture status request failed' });
+                            return;
+                        }
+                        if (Date.now() - startedAt > timeoutMs) {
+                            reject({ error: error || status || 'Capture status request failed' });
+                            return;
+                        }
+                        setTimeout(poll, interval);
+                        interval = Math.min(Math.round(interval * 1.3), maxInterval);
+                    });
+            };
+
+            poll();
+        });
+    };
+
     api.callTakePicApi = async (data, retry = 0) => {
         startTime = new Date().getTime();
         photoboothTools.console.logDev('Capture image.');
         photoboothTools
             .ajaxWithCsrf({
-                url: environment.publicFolders.api + '/capture.php',
+                url: environment.publicFolders.api + '/captureAsync.php',
                 method: 'POST',
                 data: data,
-                timeout: 25000
+                timeout: 8000
             })
             .done(async (result) => {
                 try {
+                    if (result && result.job_id) {
+                        // Derive the frontend polling timeout from the backend
+                        // stale threshold (dev.capture_async_timeout_running,
+                        // configurable 15–1800s in the admin panel) so the
+                        // backend's specific failure reason ("Capture job
+                        // timed out") wins over a generic frontend timeout
+                        // for any configured value. Fallback 120s matches the
+                        // backend default; +10s buffer gives the backend a
+                        // chance to mark the job failed before we give up.
+                        const backendRunning =
+                            parseInt(config.dev && config.dev.capture_async_timeout_running, 10) || 120;
+                        const pollTimeoutMs = (backendRunning + 10) * 1000;
+                        result = await api.waitForCaptureJob(result.job_id, pollTimeoutMs);
+                    }
                     api.cheese.destroy();
                     if (config.ui.shutter_animation) {
                         await api.shutter.start();
@@ -931,6 +1026,14 @@ const photoBooth = (function () {
 
     api.errorPic = function (data) {
         setTimeout(function () {
+            // Always try to stop preview quickly on capture errors so the
+            // camera device gets released for the next attempt.
+            try {
+                photoboothPreview.stopPreview();
+            } catch (previewStopError) {
+                photoboothTools.console.log('errorPic: preview stop failed:', previewStopError);
+            }
+
             try {
                 api.cheese.destroy();
                 api.shutter.destroy();
@@ -948,8 +1051,19 @@ const photoBooth = (function () {
                 loaderMessage.addClass('stage-message--error');
                 loaderMessage.append($('<p>').text(photoboothTools.getTranslation('error')));
                 photoboothTools.console.log('An error occurred:', data.error);
-                if (config.dev.loglevel > 1) {
-                    loaderMessage.append($('<p>').text(data.error));
+                const errorText = data && typeof data.error === 'string' ? data.error : '';
+                if (errorText) {
+                    if (config.dev.loglevel > 1) {
+                        loaderMessage.append($('<p>').text(errorText));
+                    } else {
+                        const compactError = errorText.replace(/\s+/g, ' ').trim();
+                        const maxUiErrorLength = 160;
+                        const uiErrorText =
+                            compactError.length > maxUiErrorLength
+                                ? compactError.slice(0, maxUiErrorLength - 3) + '...'
+                                : compactError;
+                        loaderMessage.append($('<p>').text(uiErrorText));
+                    }
                 }
                 api.takingPic = false;
                 remoteBuzzerClient.inProgress(false);
@@ -959,15 +1073,17 @@ const photoBooth = (function () {
                 api.takingPic = false;
             }
 
+            const configuredNotificationTimeout = Number(notificationTimeout) || 0;
+            const autoRecoverMs = config.dev.reload_on_error
+                ? Math.max(2000, configuredNotificationTimeout || 5000)
+                : Math.max(8000, configuredNotificationTimeout);
+
             if (config.dev.reload_on_error) {
                 try {
                     loaderMessage.append($('<p>').text(photoboothTools.getTranslation('auto_reload')));
                 } catch {
                     // ignore UI update failure
                 }
-                setTimeout(function () {
-                    photoboothTools.reloadPage();
-                }, notificationTimeout || 5000);
             } else {
                 const reloadButton = $('<button type="button" class="button rotaryfocus">');
                 reloadButton.append('<span class="button--icon"><i class="' + config.icons.refresh + '"></i></span>');
@@ -977,8 +1093,16 @@ const photoBooth = (function () {
                 reloadButton.appendTo(loaderButtonBar).on('click', () => {
                     photoboothTools.reloadPage();
                 });
+                try {
+                    loaderMessage.append($('<p>').text(photoboothTools.getTranslation('auto_reload')));
+                } catch {
+                    // ignore UI update failure
+                }
             }
-        }, 500);
+            setTimeout(function () {
+                photoboothTools.reloadPage();
+            }, autoRecoverMs);
+        }, 100);
     };
 
     api.processPic = function (result) {

@@ -4,9 +4,9 @@
 
 require_once '../lib/boot.php';
 
-use Photobooth\Enum\FolderEnum;
 use Photobooth\Image;
-use Photobooth\PhotoboothCapture;
+use Photobooth\Service\CaptureJobService;
+use Photobooth\Service\CaptureRunService;
 use Photobooth\Service\LoggerService;
 
 header('Content-Type: application/json');
@@ -17,96 +17,68 @@ $logger = LoggerService::getInstance()->getLogger('main');
 $logger->debug(basename($_SERVER['PHP_SELF']));
 
 try {
-    if (!isset($_POST['style'])) {
-        throw new \Exception('No style provided');
-    }
+    $style = (string)($_POST['style'] ?? '');
 
-    if (isset($_POST['collageLimit'])) {
-        $config['collage']['limit'] = $_POST['collageLimit'];
-    }
+    $legacyAsyncEnabled = (bool)($config['dev']['capture_async_legacy'] ?? false);
+    $isLegacyAsyncStyle = in_array($style, ['photo', 'custom'], true);
+    $canUseLegacyAsync =
+        $legacyAsyncEnabled &&
+        $isLegacyAsyncStyle &&
+        empty($config['dev']['demo_images']) &&
+        !($config['preview']['mode'] === 'device_cam' && !empty($config['preview']['camTakesPic']));
 
-    if (!empty($_POST['file']) && (preg_match('/^[a-z0-9_]+\.jpg$/', $_POST['file']) || preg_match('/^[a-z0-9_]+\.(mp4)$/', $_POST['file']))) {
-        $file = $_POST['file'];
-    } else {
-        $file = $_POST['style'] === 'video' ? Image::createNewFilename($config['picture']['naming'], '.mp4') : Image::createNewFilename($config['picture']['naming']);
-        if ($config['database']['file'] != 'db') {
-            $file = $config['database']['file'] . '_' . $file;
-        }
-    }
+    $logger->debug('capture legacy async decision', [
+        'style' => $style,
+        'legacyAsyncEnabled' => $legacyAsyncEnabled,
+        'canUseLegacyAsync' => $canUseLegacyAsync,
+    ]);
 
-    $filename_tmp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $file;
-    if (file_exists($filename_tmp)) {
-        $random = $_POST['style'] === 'video' ? Image::createNewFilename('random', '.mp4') : Image::createNewFilename('random');
-        $filename_random = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $random;
-        rename($filename_tmp, $filename_random);
-    }
+    if ($canUseLegacyAsync) {
+        $asyncLogger = LoggerService::getInstance()->getLogger('captureasync');
 
-    $captureHandler = new PhotoboothCapture();
-    $captureHandler->debugLevel = $config['dev']['loglevel'];
-    $captureHandler->fileName = $file;
-    $captureHandler->tmpFile = $filename_tmp;
-
-    switch ($_POST['style']) {
-        case 'photo':
-            $captureHandler->style = 'image';
-            break;
-        case 'collage':
-            if (!is_numeric($_POST['collageNumber'])) {
-                throw new \Exception('No or invalid collage number provided.');
-            }
-
-            $number = $_POST['collageNumber'] + 0;
-
-            if ($number > $config['collage']['limit']) {
-                throw new \Exception('Collage consists only of ' . $config['collage']['limit'] . ' pictures');
-            }
-
-            $captureHandler->collageSubFile = substr($file, 0, -4) . '-' . $number . '.jpg';
-            $captureHandler->tmpFile = substr($filename_tmp, 0, -4) . '-' . $number . '.jpg';
-            $captureHandler->style = 'collage';
-            $captureHandler->collageNumber = intval($number);
-            $captureHandler->collageLimit = $config['collage']['limit'];
-            break;
-        case 'chroma':
-            $captureHandler->style = 'chroma';
-            break;
-        case 'custom':
-            $captureHandler->style = 'image';
-            break;
-        case 'video':
-            $captureHandler->style = 'video';
-            break;
-        default:
-            throw new \Exception('Invalid style provided.');
-    }
-
-    if ($_POST['style'] === 'video') {
-        $captureHandler->captureCmd = $config['commands']['take_video'];
-        $captureHandler->captureWithCmd();
-    } elseif ($config['dev']['demo_images']) {
-        $captureHandler->captureDemo();
-    } elseif ($config['preview']['mode'] === 'device_cam' && $config['preview']['camTakesPic']) {
-        if (!isset($_POST['canvasimg'])) {
-            throw new \Exception('No canvas data provided!');
-        }
-        $captureHandler->flipImage = $config['preview']['flip'];
-        $captureHandler->captureCanvas($_POST['canvasimg']);
-    } else {
-        if ($_POST['style'] === 'custom') {
-            $captureHandler->captureCmd = $config['commands']['take_custom'];
-        } elseif ($_POST['style'] === 'collage' && !empty($config['commands']['take_collage'])) {
-            $captureHandler->captureCmd = $config['commands']['take_collage'];
+        if (
+            !empty($_POST['file']) &&
+            (
+                preg_match('/^[a-z0-9_]+\.jpg$/', (string)$_POST['file']) ||
+                preg_match('/^[a-z0-9_]+\.mp4$/', (string)$_POST['file'])
+            )
+        ) {
+            $file = (string)$_POST['file'];
         } else {
-            $captureHandler->captureCmd = $config['commands']['take_picture'];
+            $file = Image::createNewFilename($config['picture']['naming']);
+            if ($config['database']['file'] != 'db') {
+                $file = $config['database']['file'] . '_' . $file;
+            }
         }
-        $captureHandler->captureWithCmd();
+
+        $payload = $_POST;
+        $payload['file'] = $file;
+
+        $jobId = CaptureJobService::dispatch($payload);
+        $asyncLogger->debug('capture legacy async job queued', [
+            'job_id' => $jobId,
+            'style' => $style,
+            'file' => $file,
+        ]);
+
+        echo json_encode([
+            'success' => 'image',
+            'file' => $file,
+            'async' => true,
+            'job_id' => $jobId,
+        ], JSON_INVALID_UTF8_SUBSTITUTE);
+        exit();
     }
+
     // send image to frontend
-    echo json_encode($captureHandler->returnData());
+    echo json_encode(CaptureRunService::run($_POST, $config), JSON_INVALID_UTF8_SUBSTITUTE);
     exit();
-} catch (\Exception $e) {
+} catch (\Throwable $e) {
     $data = ['error' => $e->getMessage()];
-    $logger->error($e->getMessage(), $data);
-    echo json_encode($data);
+    $logger->error($e->getMessage(), ['error' => $e->getMessage(), 'exception' => get_class($e)]);
+    // JSON_INVALID_UTF8_SUBSTITUTE: capture command stderr (gphoto2, ffmpeg)
+    // can include non-UTF-8 bytes; without substitution json_encode() returns
+    // false and the browser receives an empty response.
+    echo json_encode($data, JSON_INVALID_UTF8_SUBSTITUTE);
     exit();
 }

@@ -29,6 +29,31 @@ final class DevConfiguration
                 ->booleanNode('reload_on_error')
                     ->defaultValue(true)
                     ->end()
+                ->booleanNode('capture_async_legacy')
+                    ->defaultValue(false)
+                    ->end()
+                ->integerNode('capture_async_timeout_queued')
+                    ->defaultValue(30)
+                    ->min(5)
+                    ->max(600)
+                    ->beforeNormalization()
+                        ->ifString()
+                        ->then(function (string $value): int {
+                            return intval($value);
+                        })
+                        ->end()
+                    ->end()
+                ->integerNode('capture_async_timeout_running')
+                    ->defaultValue(120)
+                    ->min(15)
+                    ->max(1800)
+                    ->beforeNormalization()
+                        ->ifString()
+                        ->then(function (string $value): int {
+                            return intval($value);
+                        })
+                        ->end()
+                    ->end()
             ->end();
     }
 }

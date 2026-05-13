@@ -41,13 +41,18 @@ class PhotoboothCapture
         ]);
         $demoFolder = $this->demoFolder;
         $scannedFiles = scandir($demoFolder);
-        if ($scannedFiles !== false) {
-            $devImg = array_diff($scannedFiles, ['.', '..']);
-            copy($demoFolder . $devImg[array_rand($devImg)], $this->tmpFile);
-        } else {
+        if ($scannedFiles === false) {
             $this->logger->error('Failed to scan demo folder for images!');
-            echo json_encode(['error' => 'Failed to scan demo folder for images!']);
-            die();
+            throw new \RuntimeException('Failed to scan demo folder for images!');
+        }
+        $devImg = array_diff($scannedFiles, ['.', '..']);
+        if (empty($devImg)) {
+            $this->logger->error('Demo folder is empty', ['demoFolder' => $demoFolder]);
+            throw new \RuntimeException('Demo folder contains no images.');
+        }
+        if (!copy($demoFolder . $devImg[array_rand($devImg)], $this->tmpFile)) {
+            $this->logger->error('Failed to copy demo image to tmp file', ['tmpFile' => $this->tmpFile]);
+            throw new \RuntimeException('Failed to copy demo image to tmp file.');
         }
     }
 
@@ -58,42 +63,45 @@ class PhotoboothCapture
     public function captureCanvas($data): void
     {
         $this->logger->debug('Capture Canvas');
-        try {
-            list($type, $data) = explode(';', $data);
-            list(, $data) = explode(',', $data);
-            $data = base64_decode($data);
-
-            file_put_contents($this->tmpFile, $data);
-
-            if ($this->flipImage != 'off') {
-                $imageHandler = new Image();
-                $im = $imageHandler->createFromImage($this->tmpFile);
-                if (!$im instanceof \GdImage) {
-                    throw new \Exception('Failed to create image resource from tmp image.');
-                }
-                $imageHandler->debugLevel = $this->debugLevel;
-                $imageHandler->jpegQuality = 100;
-                switch ($this->flipImage) {
-                    case 'flip-horizontal':
-                        imageflip($im, IMG_FLIP_HORIZONTAL);
-                        break;
-                    case 'flip-vertical':
-                        imageflip($im, IMG_FLIP_VERTICAL);
-                        break;
-                    case 'flip-both':
-                        imageflip($im, IMG_FLIP_BOTH);
-                        break;
-                    default:
-                        break;
-                }
-                $imageHandler->saveJpeg($im, $this->tmpFile);
-                unset($im);
-            }
-        } catch (\Exception $e) {
-            $this->logger->error($e->getMessage());
-            echo json_encode(['error' => $e->getMessage()]);
-            die();
+        $parts = explode(';', (string) $data, 2);
+        if (count($parts) !== 2 || !str_contains($parts[1], ',')) {
+            throw new \RuntimeException('Invalid canvas data URI.');
         }
+        [, $payload] = explode(',', $parts[1], 2);
+        $decoded = base64_decode($payload, true);
+        if ($decoded === false || $decoded === '') {
+            throw new \RuntimeException('Failed to decode canvas image data.');
+        }
+        if (file_put_contents($this->tmpFile, $decoded) === false) {
+            throw new \RuntimeException('Failed to write canvas image to tmp file.');
+        }
+
+        if ($this->flipImage === 'off') {
+            return;
+        }
+
+        $imageHandler = new Image();
+        $im = $imageHandler->createFromImage($this->tmpFile);
+        if (!$im instanceof \GdImage) {
+            throw new \RuntimeException('Failed to create image resource from tmp image.');
+        }
+        $imageHandler->debugLevel = $this->debugLevel;
+        $imageHandler->jpegQuality = 100;
+        switch ($this->flipImage) {
+            case 'flip-horizontal':
+                imageflip($im, IMG_FLIP_HORIZONTAL);
+                break;
+            case 'flip-vertical':
+                imageflip($im, IMG_FLIP_VERTICAL);
+                break;
+            case 'flip-both':
+                imageflip($im, IMG_FLIP_BOTH);
+                break;
+            default:
+                break;
+        }
+        $imageHandler->saveJpeg($im, $this->tmpFile);
+        unset($im);
     }
 
     /**
@@ -109,22 +117,38 @@ class PhotoboothCapture
         if (substr($this->captureCmd, 0, strlen('gphoto')) === 'gphoto') {
             chdir(dirname($this->tmpFile));
         }
-        $cmd = sprintf($this->captureCmd, $this->tmpFile);
+        // Substitute the tmp file path for the literal "%s" placeholder.
+        // Using str_replace (instead of sprintf) keeps other "%" characters
+        // in the command template intact — sprintf would otherwise treat
+        // anything like "%Y" or "%d" in a user-customized command as a
+        // format directive and either error out or produce wrong output.
+        if (substr_count($this->captureCmd, '%s') === 0) {
+            throw new \RuntimeException(
+                'Capture command template is missing the "%s" placeholder for the output file path.'
+            );
+        }
+        $cmd = str_replace('%s', $this->tmpFile, $this->captureCmd);
         $cmd .= ' 2>&1'; //Redirect stderr to stdout, otherwise error messages get lost.
 
+        $output = [];
+        $returnValue = 0;
         exec($cmd, $output, $returnValue);
 
-        if ($returnValue && ($this->debugLevel > 1 || $this->style === 'video')) {
-            $data = [
-                'error' => 'Capture command returned an error code.',
+        // Always log a non-zero return code so failures are visible regardless of loglevel.
+        if ($returnValue !== 0) {
+            $this->logger->error('Capture command returned a non-zero exit code.', [
                 'cmd' => $cmd,
                 'returnValue' => $returnValue,
                 'output' => $output,
-            ];
-            $this->logger->error('error', $data);
+            ]);
             if ($this->style === 'video') {
-                echo json_encode($data);
-                die();
+                // Clean up partial video artifacts so a follow-up capture starts fresh.
+                exec('rm -f ' . escapeshellarg($this->tmpFile) . '*');
+                throw new \RuntimeException(sprintf(
+                    'Capture command failed (exit %d): %s',
+                    $returnValue,
+                    implode("\n", $output)
+                ));
             }
         }
 
@@ -132,29 +156,30 @@ class PhotoboothCapture
             $i = 0;
             $processingTime = 300;
             while ($i < $processingTime) {
+                clearstatcache(true, $this->tmpFile);
                 if (file_exists($this->tmpFile)) {
                     break;
-                } else {
-                    $i++;
-                    usleep(100000);
                 }
+                $i++;
+                usleep(100000);
             }
         }
 
+        clearstatcache(true, $this->tmpFile);
         if (!file_exists($this->tmpFile)) {
-            $data = [
-                'error' => 'File was not created',
+            $this->logger->error('Capture produced no output file.', [
                 'cmd' => $cmd,
                 'returnValue' => $returnValue,
                 'output' => $output,
-            ];
+            ]);
             if ($this->style === 'video') {
-                // remove all files that were created - all filenames start with the videos name
-                exec('rm -f ' . $this->tmpFile . '*');
+                exec('rm -f ' . escapeshellarg($this->tmpFile) . '*');
             }
-            $this->logger->error('error', $data);
-            echo json_encode($data);
-            die();
+            throw new \RuntimeException(sprintf(
+                'Capture produced no output file (exit %d): %s',
+                $returnValue,
+                implode("\n", $output) ?: 'no output'
+            ));
         }
     }
 
