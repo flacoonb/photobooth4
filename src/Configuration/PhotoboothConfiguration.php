@@ -5,6 +5,7 @@ namespace Photobooth\Configuration;
 use Photobooth\Configuration\Section\AdminPanelConfiguration;
 use Photobooth\Configuration\Section\BackgroundConfiguration;
 use Photobooth\Configuration\Section\ButtonConfiguration;
+use Photobooth\Configuration\Section\CameraQuickSettingsConfiguration;
 use Photobooth\Configuration\Section\ChromaCaptureConfiguration;
 use Photobooth\Configuration\Section\CollageConfiguration;
 use Photobooth\Configuration\Section\ColorsConfiguration;
@@ -107,6 +108,7 @@ class PhotoboothConfiguration implements ConfigurationInterface
                 ->append(SoundConfiguration::getNode())
                 ->append(RembgConfiguration::getNode())
                 ->append(ThemeConfiguration::getNode())
+                ->append(CameraQuickSettingsConfiguration::getNode())
             ->end();
 
         return $treeBuilder;

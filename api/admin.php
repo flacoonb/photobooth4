@@ -191,6 +191,14 @@ if ($action === 'reset') {
         $newConfig['mail']['password'] = $config['mail']['password'];
     }
 
+    // Keep existing camera_quicksettings PIN when the form sends an empty value
+    if (
+        ($newConfig['camera_quicksettings']['pin'] ?? '') === ''
+        && !empty($config['camera_quicksettings']['pin'])
+    ) {
+        $newConfig['camera_quicksettings']['pin'] = $config['camera_quicksettings']['pin'];
+    }
+
     // Hash password early when a new value is provided
     if (!empty($newConfig['login']['password']) && $newConfig['login']['password'] !== ($config['login']['password'] ?? null)) {
         $newConfig['login']['password'] = password_hash($newConfig['login']['password'], PASSWORD_DEFAULT);
@@ -341,6 +349,16 @@ if ($action === 'reset') {
         if (!empty($newConfig['login'][$pinField]) && !AdminKeypad::isHashedPin($newConfig['login'][$pinField])) {
             $newConfig['login'][$pinField] = password_hash($newConfig['login'][$pinField], PASSWORD_DEFAULT);
         }
+    }
+
+    if (
+        !empty($newConfig['camera_quicksettings']['pin'])
+        && !AdminKeypad::isHashedPin($newConfig['camera_quicksettings']['pin'])
+    ) {
+        $newConfig['camera_quicksettings']['pin'] = password_hash(
+            $newConfig['camera_quicksettings']['pin'],
+            PASSWORD_DEFAULT
+        );
     }
 
     // Encrypt FTP and Mail passwords before saving to config file

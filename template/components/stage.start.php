@@ -69,4 +69,5 @@ if ($screensaverMode === 'image' && $screensaverImageSource) {
         <div id="screensaver-text-bottom" class="screensaver-overlay__text screensaver-overlay__text--bottom"></div>
     </div>
     <?php include PathUtility::getAbsolutePath('template/components/github-corner.php'); ?>
+    <?php include PathUtility::getAbsolutePath('template/components/cameraQuickSettings.php'); ?>
 </div>

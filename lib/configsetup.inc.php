@@ -3857,6 +3857,46 @@ return [
             'value' => htmlentities($config['commands']['shutdown'] ?? ''),
         ],
     ],
+    'camera_quicksettings' => [
+        'view' => 'advanced',
+        'platform' => 'linux',
+        'camera_quicksettings:enabled' => [
+            'view' => 'advanced',
+            'type' => 'checkbox',
+            'name' => 'camera_quicksettings[enabled]',
+            'value' => $config['camera_quicksettings']['enabled'] ?? false,
+        ],
+        'camera_quicksettings:pin' => [
+            'view' => 'advanced',
+            'type' => 'input',
+            'placeholder' => !empty($config['camera_quicksettings']['pin']) ? '****' : '1234',
+            'name' => 'camera_quicksettings[pin]',
+            'value' => '',
+            'attributes' => [
+                'inputmode' => 'numeric',
+                'pattern'   => '[0-9]*',
+                'autocomplete' => 'new-password',
+            ],
+        ],
+        'camera_quicksettings:position' => [
+            'view' => 'advanced',
+            'type' => 'select',
+            'name' => 'camera_quicksettings[position]',
+            'value' => $config['camera_quicksettings']['position'] ?? 'bottom-left',
+            'options' => [
+                'top-left' => 'Top-Left',
+                'top-right' => 'Top-Right',
+                'bottom-left' => 'Bottom-Left',
+                'bottom-right' => 'Bottom-Right',
+            ],
+        ],
+        'camera_quicksettings:pause_go2rtc' => [
+            'view' => 'expert',
+            'type' => 'checkbox',
+            'name' => 'camera_quicksettings[pause_go2rtc]',
+            'value' => $config['camera_quicksettings']['pause_go2rtc'] ?? true,
+        ],
+    ],
     'reset' => [
         'view' => 'basic',
         'reset_remove_media' => [

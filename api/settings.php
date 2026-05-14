@@ -15,6 +15,9 @@ $config['login']['password'] = 'secret';
 $config['login']['pin'] = 'secret';
 $config['ftp']['username'] = 'secret';
 $config['ftp']['password'] = 'secret';
+if (isset($config['camera_quicksettings']['pin'])) {
+    $config['camera_quicksettings']['pin'] = 'secret';
+}
 
 if (!empty($config['logo']['path'])) {
     $config['logo']['path'] = PathUtility::getPublicPath($config['logo']['path']);
