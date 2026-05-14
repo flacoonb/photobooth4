@@ -57,3 +57,10 @@ scripts/rembg_venv/
 /.venv
 /site
 AGENTS.md
+
+# Legacy quick-settings mod, refactored into the proper component stack
+# under template/components/cameraQuickSettings.php and friends.
+/Kamerasettings/
+
+# go2rtc capture-movie test dump
+/movie.mjpg
