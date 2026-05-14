@@ -21,8 +21,11 @@ function getBasePreviewUrl() {
     const raw = config.preview.url;
     //remove url("") if present
     const match = raw.match(/^url\((['"]?)(.+?)\1\)$/);
+    const stripped = match ? match[2] : raw;
 
-    return match ? match[2] : raw;
+    // {host} resolves to the hostname the page was loaded from, so a single
+    // config works for localhost, tablet-on-LAN, and DHCP IP changes.
+    return stripped.replace(/\{host\}/g, window.location.hostname);
 }
 
 const photoboothPreview = (function () {
