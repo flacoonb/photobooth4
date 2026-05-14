@@ -230,27 +230,27 @@ function initPhotoSwipeFromDOM(gallerySelector) {
                             }
                         };
 
-                        // Fire QR fetch only after the slide image is actually
-                        // visible — otherwise the (tiny) PNG arrives first and
-                        // the QR pops up on top of a still-loading slide.
-                        // Fall back to "change" if the activate event isn't
-                        // emitted for a particular content type.
-                        const onSlideReady = () => {
-                            if (!pswp.currSlide || !pswp.currSlide.data) {
+                        // Upstream pattern: rebuild on every slide change.
+                        // Token + .pswp existence check below survive the
+                        // late-arrival edge cases (rapid swipe, close before
+                        // QR PNG arrives) without depending on PS5-version-
+                        // specific event payload shapes that were unreliable.
+                        pswp.on('change', () => {
+                            const slide = pswp.currSlide;
+                            if (!slide || !slide.data || !slide.data.src) {
                                 return;
                             }
-                            const filename = pswp.currSlide.data.src.split('\\').pop().split('/').pop();
+                            const filename = slide.data.src.split('\\').pop().split('/').pop();
                             buildQrFor(filename);
-                        };
+                        });
 
-                        pswp.on('contentActivate', onSlideReady);
-                        // Invalidate any inflight QR + remove DOM node when the
-                        // user navigates away or closes the lightbox.
-                        pswp.on('contentDeactivate', () => {
+                        // Synchronous cleanup so the photoswipe close-fade
+                        // animation can't keep the QR visible during exit.
+                        pswp.on('close', () => {
                             activeQrToken += 1;
                             removeQr();
                         });
-                        pswp.on('close', () => {
+                        pswp.on('destroy', () => {
                             activeQrToken += 1;
                             removeQr();
                         });
