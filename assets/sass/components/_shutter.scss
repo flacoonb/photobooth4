@@ -1,5 +1,11 @@
 /**
  * Shutter
+ *
+ * Flash: white full-screen overlay fading in.
+ * Aperture: SVG mask shrinks a circular hole in a black overlay, so the
+ *          closing "pinhole" is a real circle (not a polygonal approximation
+ *          of a giant border-radius). The mask circle's `r` attribute is
+ *          animated via requestAnimationFrame in core.js.
  */
 .shutter {
   z-index: 1500;
@@ -9,6 +15,7 @@
   height: 100%;
   width: 100%;
   overflow: hidden;
+  pointer-events: none;
 
   &-flash {
     position: absolute;
@@ -18,17 +25,15 @@
     height: 100%;
     opacity: 0;
     background-color: #fff;
+    will-change: opacity;
   }
+
   &-aperture {
-    box-sizing: content-box;
-    width: 150%;
-    padding-bottom: 150%;
-    height: 0;
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    border: solid 2000px #000000;
-    border-radius: 50%;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
   }
 }

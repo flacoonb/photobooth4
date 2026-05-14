@@ -397,24 +397,74 @@ const photoBooth = (function () {
 
     api.shutter = {
         element: null,
+        apertureCircle: null,
+        apertureMaxRadius: 71, // sqrt(50²+50²) ≈ corner-to-center on a 100×100 viewBox
         create: () => {
-            if (api.shutter.element === null) {
-                const flash = document.createElement('div');
-                flash.classList.add('shutter-flash');
-                const aperture = document.createElement('div');
-                aperture.classList.add('shutter-aperture');
-                const element = document.createElement('div');
-                element.classList.add('shutter');
-                element.appendChild(flash);
-                element.appendChild(aperture);
-                document.body.append(element);
-                api.shutter.element = element;
+            if (api.shutter.element !== null) {
+                return;
             }
+
+            const flash = document.createElement('div');
+            flash.classList.add('shutter-flash');
+
+            // SVG aperture: a black-fill rectangle whose mask carves out a
+            // shrinking circle. Renders as a real (non-polygonal) circle and
+            // animates smoothly because we only mutate `r` on a tiny element
+            // — no border-radius repaints on a giant 2000-px-bordered box.
+            const svgNS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNS, 'svg');
+            svg.setAttribute('class', 'shutter-aperture');
+            svg.setAttribute('viewBox', '0 0 100 100');
+            svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+
+            const maskId = 'shutter-aperture-mask-' + Math.random().toString(36).slice(2, 8);
+
+            const defs = document.createElementNS(svgNS, 'defs');
+            const mask = document.createElementNS(svgNS, 'mask');
+            mask.setAttribute('id', maskId);
+
+            const maskBg = document.createElementNS(svgNS, 'rect');
+            maskBg.setAttribute('x', '0');
+            maskBg.setAttribute('y', '0');
+            maskBg.setAttribute('width', '100');
+            maskBg.setAttribute('height', '100');
+            maskBg.setAttribute('fill', 'white');
+
+            const maskHole = document.createElementNS(svgNS, 'circle');
+            maskHole.setAttribute('cx', '50');
+            maskHole.setAttribute('cy', '50');
+            maskHole.setAttribute('r', String(api.shutter.apertureMaxRadius));
+            maskHole.setAttribute('fill', 'black');
+
+            mask.appendChild(maskBg);
+            mask.appendChild(maskHole);
+            defs.appendChild(mask);
+
+            const fill = document.createElementNS(svgNS, 'rect');
+            fill.setAttribute('x', '0');
+            fill.setAttribute('y', '0');
+            fill.setAttribute('width', '100');
+            fill.setAttribute('height', '100');
+            fill.setAttribute('fill', '#000');
+            fill.setAttribute('mask', 'url(#' + maskId + ')');
+
+            svg.appendChild(defs);
+            svg.appendChild(fill);
+
+            const element = document.createElement('div');
+            element.classList.add('shutter');
+            element.appendChild(flash);
+            element.appendChild(svg);
+            document.body.append(element);
+
+            api.shutter.element = element;
+            api.shutter.apertureCircle = maskHole;
         },
         destroy: () => {
             if (api.shutter.element !== null) {
                 api.shutter.element.remove();
                 api.shutter.element = null;
+                api.shutter.apertureCircle = null;
             }
         },
         start: () => {
@@ -423,10 +473,10 @@ const photoBooth = (function () {
             return new Promise((resolve) => {
                 photoboothTools.console.log('Shutter: Start');
                 const flash = api.shutter.element.querySelector('.shutter-flash');
-                flash.style.transition = 'opacity 0.5s';
-                const flashAnimation = flash.animate([{}, { opacity: 1 }], {
-                    duration: 500,
-                    fill: 'forwards'
+                const flashAnimation = flash.animate([{ opacity: 0 }, { opacity: 1 }], {
+                    duration: 700,
+                    fill: 'forwards',
+                    easing: 'ease-out'
                 });
                 flashAnimation.onfinish = () => {
                     resolve();
@@ -438,25 +488,28 @@ const photoBooth = (function () {
 
             return new Promise((resolve) => {
                 photoboothTools.console.log('Shutter: Stop');
-                const aperture = api.shutter.element.querySelector('.shutter-aperture');
-                aperture.style.transition = 'width 0.5s, padding-bottom 0.5s';
-                const apertureAnimation = aperture.animate(
-                    [
-                        {},
-                        {
-                            width: 0,
-                            paddingBottom: 0
-                        }
-                    ],
-                    {
-                        duration: 500,
-                        fill: 'forwards'
+                const circle = api.shutter.apertureCircle;
+                const startR = api.shutter.apertureMaxRadius;
+                const duration = 700;
+                const t0 = performance.now();
+                const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+
+                const tick = (now) => {
+                    if (api.shutter.element === null || api.shutter.apertureCircle === null) {
+                        // Got destroyed externally — bail out cleanly
+                        resolve();
+                        return;
                     }
-                );
-                apertureAnimation.onfinish = () => {
-                    api.shutter.destroy();
-                    resolve();
+                    const t = Math.min(1, (now - t0) / duration);
+                    circle.setAttribute('r', String(startR * (1 - easeInOut(t))));
+                    if (t < 1) {
+                        requestAnimationFrame(tick);
+                    } else {
+                        api.shutter.destroy();
+                        resolve();
+                    }
                 };
+                requestAnimationFrame(tick);
             });
         }
     };
@@ -774,12 +827,34 @@ const photoBooth = (function () {
                         const backendRunning =
                             parseInt(config.dev && config.dev.capture_async_timeout_running, 10) || 120;
                         const pollTimeoutMs = (backendRunning + 10) * 1000;
+
+                        api.cheese.destroy();
+
+                        // Run the shutter animation IN PARALLEL with the
+                        // capture polling, but time it so the flash peaks
+                        // when the camera actually fires. The worker needs
+                        // roughly go2rtc-stop (~500 ms) + gphoto2 warm-up
+                        // (~300 ms) before the real shutter click, so we
+                        // lead-in by ~800 ms. Then flash (500 ms) → close
+                        // (500 ms) runs straight through without a stalled
+                        // white frame waiting for the worker to finish.
+                        const shutterLeadMs = 800;
+                        const shutterAnimationPromise = config.ui.shutter_animation
+                            ? (async () => {
+                                  await new Promise((r) => setTimeout(r, shutterLeadMs));
+                                  await api.shutter.start();
+                                  await api.shutter.stop();
+                              })()
+                            : Promise.resolve();
+
                         result = await api.waitForCaptureJob(result.job_id, pollTimeoutMs);
-                    }
-                    api.cheese.destroy();
-                    if (config.ui.shutter_animation) {
-                        await api.shutter.start();
-                        await api.shutter.stop();
+                        await shutterAnimationPromise;
+                    } else {
+                        api.cheese.destroy();
+                        if (config.ui.shutter_animation) {
+                            await api.shutter.start();
+                            await api.shutter.stop();
+                        }
                     }
                     endTime = new Date().getTime();
                     totalTime = endTime - startTime;
