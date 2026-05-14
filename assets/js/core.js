@@ -1469,11 +1469,31 @@ const photoBooth = (function () {
             return;
         }
 
+        photoboothTools.console.logDev('showQrCode for', filename);
+
         photoboothTools.modal.open();
         const body = photoboothTools.modal.element.querySelector('.modal-body');
+        // Clear any stale content from a previous open (mail form, previous
+        // QR call, …). Without this the image lands below older nodes and
+        // can be invisible behind a scrollable region.
+        body.replaceChildren();
+
+        const encodedFilename = encodeURIComponent(filename);
 
         const image = document.createElement('img');
-        image.src = environment.publicFolders.api + '/qrcode.php?filename=' + filename;
+        image.alt = 'QR-Code';
+        image.classList.add('qr-image');
+        image.addEventListener('load', () => {
+            photoboothTools.console.logDev('QR image loaded', image.src);
+        });
+        image.addEventListener('error', () => {
+            photoboothTools.console.log('QR image failed to load', image.src);
+            const fallback = document.createElement('p');
+            fallback.classList.add('qr-error');
+            fallback.textContent = photoboothTools.getTranslation('qr_load_error');
+            image.replaceWith(fallback);
+        });
+        image.src = environment.publicFolders.api + '/qrcode.php?filename=' + encodedFilename;
         body.appendChild(image);
 
         const qrHelpText = config.qr.custom_text
@@ -1482,6 +1502,29 @@ const photoBooth = (function () {
         const text = document.createElement('p');
         text.innerHTML = qrHelpText;
         body.appendChild(text);
+
+        // Show the resolved target URL underneath so it's obvious what the
+        // QR encodes — invaluable for debugging "wrong URL" reports.
+        const urlLine = document.createElement('p');
+        urlLine.classList.add('qr-url');
+        urlLine.style.fontSize = '0.75rem';
+        urlLine.style.opacity = '0.7';
+        urlLine.style.wordBreak = 'break-all';
+        body.appendChild(urlLine);
+
+        fetch(environment.publicFolders.api + '/qrcode.php?info=1&filename=' + encodedFilename, {
+            cache: 'no-store'
+        })
+            .then((r) => r.json())
+            .then((data) => {
+                if (data && data.url) {
+                    const tag = data.remote ? ' (remote)' : ' (local)';
+                    urlLine.textContent = data.url + tag;
+                }
+            })
+            .catch(() => {
+                // non-fatal — the QR image itself is the primary content
+            });
     };
 
     api.renderPic = function (filename, files) {

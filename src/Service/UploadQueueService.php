@@ -18,10 +18,22 @@ class UploadQueueService
         $dbPath = PathUtility::getAbsolutePath('var/run/upload_queue.sqlite');
         $dir = dirname($dbPath);
         if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
+            mkdir($dir, 0775, true);
         }
         $this->db = new \PDO('sqlite:' . $dbPath);
         $this->db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        // Ensure DB + WAL/SHM sidecar files are group-writable (mode 0664).
+        // SQLite creates them with the process umask (typically 022 → 0644),
+        // which prevents the worker (running as www-data via systemd) from
+        // writing them when the photobooth user previously created them via
+        // CLI, and vice versa. Both users are in the same group, so 0664
+        // makes the files robust against either creation order.
+        foreach ([$dbPath, $dbPath . '-wal', $dbPath . '-shm'] as $sidecar) {
+            if (is_file($sidecar) && (fileperms($sidecar) & 0777) !== 0664) {
+                @chmod($sidecar, 0664);
+            }
+        }
 
         // Tune SQLite for the producer/consumer pattern of this queue:
         // - WAL journal: concurrent readers + one writer instead of mutually

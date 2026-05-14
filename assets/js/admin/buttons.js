@@ -536,11 +536,14 @@ $(function () {
         return false;
     });
 
-    // Show FTP folder browse button on page load if FTP credentials are already configured
-    const ftpHost = $('[name="ftp\\[baseURL\\]"]').val();
-    const ftpUser = $('[name="ftp\\[username\\]"]').val();
-    const ftpPassPlaceholder = $('[name="ftp\\[password\\]"]').attr('placeholder');
-    if (ftpHost && ftpUser && ftpPassPlaceholder === '********') {
+    // Always render the FTP folder-browse button next to the baseFolder
+    // field whenever the FTP section is in the DOM. Previously this was
+    // gated on the password placeholder being "********", which broke
+    // every time the admin form was re-rendered without the gate
+    // matching (different view mode, freshly entered password, etc.).
+    // A click on the button just calls ftpListFolders() — if creds are
+    // wrong the user sees the connection error inline.
+    if ($('[name="ftp\\[baseFolder\\]"]').length) {
         ftpEnsureBrowseButton();
     }
 });

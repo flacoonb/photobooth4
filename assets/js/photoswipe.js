@@ -180,36 +180,80 @@ function initPhotoSwipeFromDOM(gallerySelector) {
                     html: '<i class="' + config.icons.qr + '"></i>',
 
                     onInit: (el, pswp) => {
-                        if (config.qr.pswp != 'hidden') {
-                            pswp.on('change', () => {
-                                if (document.getElementById('pswpQR')) {
-                                    document.getElementById('pswpQR').remove();
-                                }
-                                const qrWrapper = document.createElement('div');
-                                qrWrapper.id = 'pswpQR';
-                                qrWrapper.setAttribute('class', 'pswp-qrcode ' + config.qr.pswp);
-
-                                const qrImage = document.createElement('img');
-                                qrImage.addEventListener('load', () => {
-                                    $('.pswp').append(qrWrapper);
-                                });
-                                qrImage.src =
-                                    environment.publicFolders.api +
-                                    '/qrcode.php?filename=' +
-                                    pswp.currSlide.data.src.split('\\').pop().split('/').pop();
-                                qrImage.alt = 'QR-Code';
-                                qrImage.classList.add('pswp-qrcode__image');
-                                qrWrapper.append(qrImage);
-
-                                const qrShortText = config.qr.short_text;
-                                if (qrShortText && qrShortText.length > 0) {
-                                    const qrCaption = document.createElement('p');
-                                    qrCaption.classList.add('pswp-qrcode__caption');
-                                    qrCaption.textContent = qrShortText;
-                                    qrWrapper.append(qrCaption);
-                                }
-                            });
+                        if (config.qr.pswp === 'hidden') {
+                            return;
                         }
+
+                        // Tracks the slide we last started a QR fetch for, so a
+                        // late-arriving QR PNG cannot get attached to a slide
+                        // the user has already clicked away from.
+                        let activeQrToken = 0;
+
+                        const removeQr = () => {
+                            const existing = document.getElementById('pswpQR');
+                            if (existing) {
+                                existing.remove();
+                            }
+                        };
+
+                        const buildQrFor = (filename) => {
+                            removeQr();
+                            const token = ++activeQrToken;
+                            const wrapper = document.createElement('div');
+                            wrapper.id = 'pswpQR';
+                            wrapper.setAttribute('class', 'pswp-qrcode ' + config.qr.pswp);
+
+                            const qrImage = document.createElement('img');
+                            qrImage.alt = 'QR-Code';
+                            qrImage.classList.add('pswp-qrcode__image');
+                            qrImage.addEventListener('load', () => {
+                                // Drop the result if a newer slide started fetching
+                                // its QR meanwhile, or if the lightbox is gone.
+                                if (token !== activeQrToken) {
+                                    return;
+                                }
+                                if (!document.querySelector('.pswp')) {
+                                    return;
+                                }
+                                $('.pswp').append(wrapper);
+                            });
+                            qrImage.src =
+                                environment.publicFolders.api + '/qrcode.php?filename=' + encodeURIComponent(filename);
+                            wrapper.append(qrImage);
+
+                            const qrShortText = config.qr.short_text;
+                            if (qrShortText && qrShortText.length > 0) {
+                                const qrCaption = document.createElement('p');
+                                qrCaption.classList.add('pswp-qrcode__caption');
+                                qrCaption.textContent = qrShortText;
+                                wrapper.append(qrCaption);
+                            }
+                        };
+
+                        // Fire QR fetch only after the slide image is actually
+                        // visible — otherwise the (tiny) PNG arrives first and
+                        // the QR pops up on top of a still-loading slide.
+                        // Fall back to "change" if the activate event isn't
+                        // emitted for a particular content type.
+                        const onSlideReady = () => {
+                            if (!pswp.currSlide || !pswp.currSlide.data) {
+                                return;
+                            }
+                            const filename = pswp.currSlide.data.src.split('\\').pop().split('/').pop();
+                            buildQrFor(filename);
+                        };
+
+                        pswp.on('contentActivate', onSlideReady);
+                        // Invalidate any inflight QR + remove DOM node when the
+                        // user navigates away or closes the lightbox.
+                        pswp.on('contentDeactivate', () => {
+                            activeQrToken += 1;
+                            removeQr();
+                        });
+                        pswp.on('close', () => {
+                            activeQrToken += 1;
+                            removeQr();
+                        });
                     },
 
                     onClick: (event, el, pswp) => {

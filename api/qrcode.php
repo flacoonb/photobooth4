@@ -55,6 +55,20 @@ if ($filename) {
         }
     }
     $url = PathUtility::getPublicPath($url, true);
+
+    // ?info=1 → return the resolved target URL + remote/local flag as JSON.
+    // Used by the frontend QR modal to show the user exactly what the QR
+    // encodes (essential for diagnosing "wrong URL" issues without scanning).
+    if (!empty($_GET['info'])) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'url' => $url,
+            'remote' => $useRemote,
+            'remote_filename' => $useRemote ? $remoteFilename : null,
+        ]);
+        exit();
+    }
+
     try {
         $result = QrCodeUtility::create($url);
         header('Content-Type: ' . $result->getMimeType());
