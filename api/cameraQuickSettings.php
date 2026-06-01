@@ -4,6 +4,7 @@
 
 require_once '../lib/boot.php';
 
+use Photobooth\Service\ConfigurationService;
 use Photobooth\Service\GphotoConfigService;
 use Photobooth\Service\LoggerService;
 
@@ -30,10 +31,13 @@ $pauseGo2rtc = (bool) ($config['camera_quicksettings']['pause_go2rtc'] ?? true);
 $requested = $config['camera_quicksettings']['settings'] ?? GphotoConfigService::SUPPORTED_SETTINGS;
 $requested = array_values(array_intersect($requested, GphotoConfigService::SUPPORTED_SETTINGS));
 
+// Load user-saved settings from config to populate defaults instead of current camera values
+$savedValues = $config['camera_quicksettings']['values'] ?? [];
+
 $service = GphotoConfigService::getInstance();
 
 try {
-    $result = $service->withCameraAccess($pauseGo2rtc, function (GphotoConfigService $svc) use ($requested) {
+    $result = $service->withCameraAccess($pauseGo2rtc, function (GphotoConfigService $svc) use ($requested, $savedValues) {
         $configKeys = $svc->listConfigKeys();
         $camera = $svc->getCameraInfo();
 
@@ -50,11 +54,13 @@ try {
 
             try {
                 $info = $svc->getChoices($resolvedKey);
+                // Use saved user value if available, else fall back to current camera value
+                $displayValue = $savedValues[$resolvedKey] ?? $info['current'];
                 $settings[$logical] = [
                     'available' => !empty($info['choices']),
                     'key' => $info['key'],
                     'label' => $info['label'],
-                    'current' => $info['current'],
+                    'current' => $displayValue,
                     'choices' => $info['choices'],
                 ];
             } catch (\Throwable $e) {

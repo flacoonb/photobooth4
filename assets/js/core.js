@@ -1149,16 +1149,17 @@ const photoBooth = (function () {
             }
 
             const configuredNotificationTimeout = Number(notificationTimeout) || 0;
-            const autoRecoverMs = config.dev.reload_on_error
-                ? Math.max(2000, configuredNotificationTimeout || 5000)
-                : Math.max(8000, configuredNotificationTimeout);
 
             if (config.dev.reload_on_error) {
+                const autoRecoverMs = Math.max(2000, configuredNotificationTimeout || 5000);
                 try {
                     loaderMessage.append($('<p>').text(photoboothTools.getTranslation('auto_reload')));
                 } catch {
                     // ignore UI update failure
                 }
+                setTimeout(function () {
+                    photoboothTools.reloadPage();
+                }, autoRecoverMs);
             } else {
                 const reloadButton = $('<button type="button" class="button rotaryfocus">');
                 reloadButton.append('<span class="button--icon"><i class="' + config.icons.refresh + '"></i></span>');
@@ -1168,15 +1169,7 @@ const photoBooth = (function () {
                 reloadButton.appendTo(loaderButtonBar).on('click', () => {
                     photoboothTools.reloadPage();
                 });
-                try {
-                    loaderMessage.append($('<p>').text(photoboothTools.getTranslation('auto_reload')));
-                } catch {
-                    // ignore UI update failure
-                }
             }
-            setTimeout(function () {
-                photoboothTools.reloadPage();
-            }, autoRecoverMs);
         }, 100);
     };
 
@@ -1502,29 +1495,6 @@ const photoBooth = (function () {
         const text = document.createElement('p');
         text.innerHTML = qrHelpText;
         body.appendChild(text);
-
-        // Show the resolved target URL underneath so it's obvious what the
-        // QR encodes — invaluable for debugging "wrong URL" reports.
-        const urlLine = document.createElement('p');
-        urlLine.classList.add('qr-url');
-        urlLine.style.fontSize = '0.75rem';
-        urlLine.style.opacity = '0.7';
-        urlLine.style.wordBreak = 'break-all';
-        body.appendChild(urlLine);
-
-        fetch(environment.publicFolders.api + '/qrcode.php?info=1&filename=' + encodedFilename, {
-            cache: 'no-store'
-        })
-            .then((r) => r.json())
-            .then((data) => {
-                if (data && data.url) {
-                    const tag = data.remote ? ' (remote)' : ' (local)';
-                    urlLine.textContent = data.url + tag;
-                }
-            })
-            .catch(() => {
-                // non-fatal — the QR image itself is the primary content
-            });
     };
 
     api.renderPic = function (filename, files) {
