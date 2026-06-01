@@ -111,6 +111,13 @@ class CaptureRunService
 
         if ((string) $request['style'] === 'video') {
             $captureHandler->captureCmd = $config['commands']['take_video'];
+            if (($config['camera_quicksettings']['apply_to_capture'] ?? true) &&
+                !empty($config['camera_quicksettings']['values'])) {
+                $captureHandler->captureCmd = self::enhanceCaptureCommand(
+                    $captureHandler->captureCmd,
+                    (array) $config['camera_quicksettings']['values']
+                );
+            }
             $captureHandler->captureWithCmd();
         } elseif ($config['dev']['demo_images']) {
             $captureHandler->captureDemo();
@@ -128,9 +135,59 @@ class CaptureRunService
             } else {
                 $captureHandler->captureCmd = $config['commands']['take_picture'];
             }
+            if (($config['camera_quicksettings']['apply_to_capture'] ?? true) &&
+                !empty($config['camera_quicksettings']['values'])) {
+                $captureHandler->captureCmd = self::enhanceCaptureCommand(
+                    $captureHandler->captureCmd,
+                    (array) $config['camera_quicksettings']['values']
+                );
+            }
             $captureHandler->captureWithCmd();
         }
 
         return $captureHandler->returnData();
+    }
+
+    private static function enhanceCaptureCommand(
+        string $captureCmd,
+        array $cameraSettings
+    ): string {
+        if (empty($cameraSettings)) {
+            return $captureCmd;
+        }
+
+        if (!str_contains($captureCmd, 'gphoto2') ||
+            !str_contains($captureCmd, '--capture-image-and-download')) {
+            return $captureCmd;
+        }
+
+        $validSettings = [];
+        foreach ($cameraSettings as $key => $value) {
+            if (preg_match('#^[a-zA-Z0-9_./:-]+$#', $key) &&
+                preg_match('#^[A-Za-z0-9 _./:+,-]+$#', $value)) {
+                $validSettings[$key] = $value;
+            }
+        }
+
+        if (empty($validSettings)) {
+            return $captureCmd;
+        }
+
+        $configArgs = self::buildConfigArguments($validSettings);
+        return preg_replace(
+            '#(\s+--capture-image-and-download\b)#',
+            $configArgs . '$1',
+            $captureCmd,
+            1
+        );
+    }
+
+    private static function buildConfigArguments(array $cameraSettings): string
+    {
+        $args = '';
+        foreach ($cameraSettings as $key => $value) {
+            $args .= ' --set-config ' . escapeshellarg($key . '=' . $value);
+        }
+        return $args;
     }
 }

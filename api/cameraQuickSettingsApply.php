@@ -4,6 +4,7 @@
 
 require_once '../lib/boot.php';
 
+use Photobooth\Service\ConfigurationService;
 use Photobooth\Service\GphotoConfigService;
 use Photobooth\Service\LoggerService;
 
@@ -64,14 +65,13 @@ if ($valid === []) {
 
 $pauseGo2rtc = (bool) ($config['camera_quicksettings']['pause_go2rtc'] ?? true);
 $service = GphotoConfigService::getInstance();
+$configurationService = ConfigurationService::getInstance();
 
 $applied = [];
 $errors = [];
 
-$go2rtcUpdated = false;
-
 try {
-    $service->withCameraAccess($pauseGo2rtc, function (GphotoConfigService $svc) use ($valid, &$applied, &$errors, &$go2rtcUpdated) {
+    $service->withCameraAccess($pauseGo2rtc, function (GphotoConfigService $svc) use ($valid, &$applied, &$errors, $configurationService, $logger) {
         foreach ($valid as $entry) {
             try {
                 $svc->setValue($entry['key'], $entry['value']);
@@ -88,21 +88,36 @@ try {
             }
         }
 
-        // Persist successful changes into go2rtc.yaml so the live-preview restart
-        // (triggered automatically when we leave the withCameraAccess scope)
-        // does not wipe them with the hardcoded values from the yaml.
+        // Persist successful changes into config so they apply to future captures
         if ($applied !== []) {
-            $kv = [];
-            foreach ($applied as $entry) {
-                $kv[$entry['key']] = $entry['value'];
+            try {
+                $newConfig = $configurationService->getConfiguration();
+                if (!isset($newConfig['camera_quicksettings'])) {
+                    $newConfig['camera_quicksettings'] = [];
+                }
+
+                // Store full gphoto2-Paths as provided in $applied
+                $captureValues = [];
+                foreach ($applied as $entry) {
+                    $captureValues[$entry['key']] = $entry['value'];
+                }
+                $newConfig['camera_quicksettings']['values'] = $captureValues;
+                $configurationService->update($newConfig);
+
+                $logger->debug('camera_quicksettings values persisted to config', [
+                    'count' => count($applied)
+                ]);
+            } catch (\Throwable $e) {
+                $logger->warning('Failed to persist camera settings to config', [
+                    'error' => $e->getMessage()
+                ]);
+                // Don't fail the request - settings still applied to camera device
             }
-            $go2rtcUpdated = $svc->updateGo2rtcConfig($kv);
         }
     });
     $logger->debug('camera_quicksettings apply complete', [
         'applied_count' => count($applied),
         'errors_count' => count($errors),
-        'go2rtc_updated' => $go2rtcUpdated,
     ]);
 } catch (\Throwable $e) {
     $logger->error('camera_quicksettings apply failed: ' . $e->getMessage());
@@ -124,5 +139,4 @@ echo json_encode([
     'success' => $errors === [],
     'applied' => $applied,
     'errors' => $errors,
-    'go2rtc_updated' => $go2rtcUpdated,
 ]);

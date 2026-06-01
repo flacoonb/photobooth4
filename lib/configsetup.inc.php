@@ -2734,6 +2734,7 @@ return [
             'placeholder' => 'mysite',
             'name' => 'ftp[baseFolder]',
             'value' => $config['ftp']['baseFolder'],
+            'attributes' => ['id' => 'ftp-basefolder-input'],
         ],
         'title' => [
             'view' => 'advanced',
@@ -2754,6 +2755,13 @@ return [
             'placeholder' => 'https://photobooth.com',
             'name' => 'ftp[website]',
             'value' => $config['ftp']['website'],
+        ],
+        'galleryUrl' => [
+            'view' => 'advanced',
+            'type' => 'input',
+            'placeholder' => 'https://photobooth.com/galerie/event',
+            'name' => 'ftp[galleryUrl]',
+            'value' => $config['ftp']['galleryUrl'],
         ],
         'create_webpage' => [
             'view' => 'basic',
@@ -3895,6 +3903,12 @@ return [
             'type' => 'checkbox',
             'name' => 'camera_quicksettings[pause_go2rtc]',
             'value' => $config['camera_quicksettings']['pause_go2rtc'] ?? true,
+        ],
+        'camera_quicksettings:apply_to_capture' => [
+            'view' => 'advanced',
+            'type' => 'checkbox',
+            'name' => 'camera_quicksettings[apply_to_capture]',
+            'value' => $config['camera_quicksettings']['apply_to_capture'] ?? true,
         ],
     ],
     'reset' => [

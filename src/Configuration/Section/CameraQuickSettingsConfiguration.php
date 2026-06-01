@@ -33,6 +33,12 @@ final class CameraQuickSettingsConfiguration
                         ->end()
                     ->defaultValue(['iso', 'aperture', 'shutterspeed', 'whitebalance'])
                     ->end()
+                ->arrayNode('values')
+                    ->useAttributeAsKey('name')
+                    ->prototype('scalar')->end()
+                    ->defaultValue([])
+                    ->end()
+                ->booleanNode('apply_to_capture')->defaultValue(true)->end()
             ->end();
     }
 }
