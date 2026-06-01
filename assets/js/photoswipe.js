@@ -72,7 +72,7 @@ function initPhotoSwipeFromDOM(gallerySelector) {
 
         gallery.on('uiRegister', function () {
             // counter - 5, zoom button - 10, info - 15, close - 20.
-            const orderNumber = [7, 8, 9, 11, 12, 13, 14];
+            const orderNumber = [7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19];
 
             if (config.print.from_gallery && config.print.limit > 0) {
                 gallery.pswp.ui.registerElement({
