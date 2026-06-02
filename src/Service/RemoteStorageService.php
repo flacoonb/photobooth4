@@ -126,6 +126,14 @@ class RemoteStorageService
 
     public function getWebpageUri(): string
     {
+        // galleryUrl overrides the auto-constructed URL for setups where the
+        // FTP baseFolder path does not map 1:1 to the web URL path (e.g. on
+        // Infomaniak where FTP root is the account home, not the web root).
+        $galleryUrl = rtrim((string) ($this->config['galleryUrl'] ?? ''), '/');
+        if ($galleryUrl !== '') {
+            return $galleryUrl;
+        }
+
         $website = rtrim((string) $this->config['website'], '/');
         $baseFolder = trim((string) $this->config['baseFolder'], '/');
 

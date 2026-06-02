@@ -42,6 +42,7 @@ final class FtpConfiguration
                 ->scalarNode('title')->defaultValue('')->end()
                 ->booleanNode('useForQr')->defaultValue(false)->end()
                 ->scalarNode('website')->defaultValue('')->end()
+                ->scalarNode('galleryUrl')->defaultValue('')->end()
                 ->booleanNode('create_webpage')->defaultValue(false)->end()
                 ->scalarNode('template_location')->defaultValue('resources/template/index.php')->end()
                 ->booleanNode('delete')->defaultValue(false)->end()

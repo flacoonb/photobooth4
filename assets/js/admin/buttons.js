@@ -238,14 +238,14 @@ $(function () {
     }
 
     function ftpEnsureBrowseButton() {
-        const $baseFolderCard = $('[name="ftp\\[baseFolder\\]"]').closest('.adminSettingCard');
+        const $baseFolderCard = $('#ftp-basefolder-input').closest('.adminSettingCard');
         if ($baseFolderCard.length === 0) {
             return;
         }
 
         // Add browse button next to baseFolder input if not already present
         if ($('#ftp-browse-btn').length === 0) {
-            const $input = $baseFolderCard.find('input[name="ftp\\[baseFolder\\]"]');
+            const $input = $('#ftp-basefolder-input');
             $input.wrap('<div class="flex items-center gap-2 w-full"></div>');
             $input.after(
                 '<button type="button" id="ftp-browse-btn" class="hidden flex-shrink-0 h-10 px-3 rounded-lg bg-brand-1 text-white text-sm font-semibold hover:bg-brand-1/80 transition flex items-center gap-2">' +
@@ -287,8 +287,13 @@ $(function () {
     });
     $(document).on('click', '.ftp-select-folder', function (e) {
         e.preventDefault();
-        const folder = $(this).data('folder');
-        $('[name="ftp\\[baseFolder\\]"]').val(folder).trigger('change');
+        const folder = $(this).attr('data-folder') || '';
+        const nativeEl = document.getElementById('ftp-basefolder-input');
+        if (nativeEl) {
+            nativeEl.value = folder;
+            nativeEl.dispatchEvent(new Event('input', { bubbles: true }));
+            nativeEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         $('#ftp-folder-browser').addClass('hidden');
     });
     $(document).on('click', '#ftp-browse-btn', function (e) {
@@ -543,7 +548,7 @@ $(function () {
     // matching (different view mode, freshly entered password, etc.).
     // A click on the button just calls ftpListFolders() — if creds are
     // wrong the user sees the connection error inline.
-    if ($('[name="ftp\\[baseFolder\\]"]').length) {
+    if ($('#ftp-basefolder-input').length) {
         ftpEnsureBrowseButton();
     }
 });

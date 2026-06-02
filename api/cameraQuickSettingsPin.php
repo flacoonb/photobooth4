@@ -82,7 +82,9 @@ if (!$ok) {
         }
     }
     $persisted[$ip] = $ipAttempts;
-    @file_put_contents($throttleFile, json_encode($persisted), LOCK_EX);
+    if (file_put_contents($throttleFile, json_encode($persisted), LOCK_EX) === false) {
+        $logger->warning('camera_quicksettings: failed to persist IP throttle', ['ip' => $ip, 'file' => $throttleFile]);
+    }
 
     http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'invalid pin']);
@@ -104,7 +106,9 @@ if (is_readable($throttleFile)) {
     }
 }
 unset($persisted[$ip]);
-@file_put_contents($throttleFile, json_encode($persisted), LOCK_EX);
+if (file_put_contents($throttleFile, json_encode($persisted), LOCK_EX) === false) {
+    $logger->warning('camera_quicksettings: failed to clear IP throttle on success', ['ip' => $ip, 'file' => $throttleFile]);
+}
 
 echo json_encode([
     'success' => true,

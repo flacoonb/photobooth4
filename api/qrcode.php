@@ -49,7 +49,7 @@ if ($filename) {
     }
     if ($config['qr']['append_filename']) {
         if ($useRemote) {
-            $url .= '/?img=' . rawurlencode($remoteFilename);
+            $url .= '/images/' . rawurlencode($remoteFilename);
         } else {
             $url .= $filename;
         }

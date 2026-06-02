@@ -110,7 +110,11 @@ try {
         'error' => $e->getMessage(),
         'exception' => get_class($e),
     ]);
+    // Return a sanitized message — Flysystem exceptions may contain the host,
+    // port, or credentials in the message text.
+    $safe = preg_replace('/\b(?:\d{1,3}\.){3}\d{1,3}\b|:[0-9]{2,5}\b/', '[redacted]', $e->getMessage());
+    $safe = mb_strimwidth($safe, 0, 200, '…');
     http_response_code(502);
-    echo json_encode(['error' => $e->getMessage()]);
+    echo json_encode(['error' => $safe]);
 }
 exit();

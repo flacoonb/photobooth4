@@ -39,14 +39,15 @@ class AdminInput
     public static function renderInput(array $setting, string $label): string
     {
         $attributes = self::buildAttributes($setting);
+        $htmlType = $setting['type'] === 'number' ? 'number' : 'text';
 
         return self::renderHeadline($label) . '
             <input
                 class="w-full h-10 border-2 border-solid border-gray-300 focus:border-brand-1 rounded-md px-3 mt-auto"
-                type="' . $setting['type'] . '"
+                type="' . $htmlType . '"
                 name="' . $setting['name'] . '"
-                value="' . $setting['value'] . '"
-                placeholder="' . $setting['placeholder'] . '"
+                value="' . htmlspecialchars((string) $setting['value'], ENT_QUOTES) . '"
+                placeholder="' . htmlspecialchars((string) $setting['placeholder'], ENT_QUOTES) . '"
 				' . $attributes . '
             />
         ';
