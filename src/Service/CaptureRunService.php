@@ -156,8 +156,11 @@ class CaptureRunService
             return $captureCmd;
         }
 
-        if (!str_contains($captureCmd, 'gphoto2') ||
-            !str_contains($captureCmd, '--capture-image-and-download')) {
+        $hasCaptureFlag = str_contains($captureCmd, '--capture-image-and-download') ||
+            str_contains($captureCmd, '--trigger-capture');
+        $isGphotoCmd = str_contains($captureCmd, 'gphoto2') ||
+            (bool) preg_match('#^\s*(?:\S+/)?capture\b#', $captureCmd);
+        if (!$isGphotoCmd || !$hasCaptureFlag) {
             return $captureCmd;
         }
 
@@ -175,7 +178,7 @@ class CaptureRunService
 
         $configArgs = self::buildConfigArguments($validSettings);
         return preg_replace(
-            '#(\s+--capture-image-and-download\b)#',
+            '#(\s+--(?:capture-image-and-download|trigger-capture)\b)#',
             $configArgs . '$1',
             $captureCmd,
             1
